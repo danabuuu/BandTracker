@@ -15,6 +15,7 @@
   
   <script type="text/babel">
 function BandTracker() {
+  const { useState, useEffect } = React;
   const [activeTab, setActiveTab] = useState('repertoire');
   const [songs, setSongs] = useState([]);
   const [gigs, setGigs] = useState([]);
