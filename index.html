@@ -1,1302 +1,251 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Band Activity Tracker</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    select option { background-color: #1e293b; color: white; }
+  </style>
 </head>
 <body>
   <div id="root"></div>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
-  
   <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { createClient } = supabase;
 
-function BandTracker() {
-  const { useState, useEffect } = React;
-  const [activeTab, setActiveTab] = useState('repertoire');
-  const [songs, setSongs] = useState([]);
-  const [gigs, setGigs] = useState([]);
-  const [editingId, setEditingId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('cards'); // 'cards' or 'spreadsheet'
-  const [selectedSongs, setSelectedSongs] = useState([]); // Track selected songs for deletion
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [searchQuery, setSearchQuery] = useState({}); // Track search query per gig
-  const [showSuggestions, setShowSuggestions] = useState({}); // Track suggestion visibility per gig
-  const [expandedGigs, setExpandedGigs] = useState({}); // Track which gigs have expanded setlists
-  const [repertoireSearch, setRepertoireSearch] = useState('');
-  const [repertoireSort, setRepertoireSort] = useState('title'); // title, artist, genre, key, date
-  const [gigsSearch, setGigsSearch] = useState('');
-  const [gigsSort, setGigsSort] = useState('date'); // date, name, venue
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [showPasswordError, setShowPasswordError] = useState(false);
-  const [showPasswordScreen, setShowPasswordScreen] = useState(true);
+    const SUPABASE_URL = 'https://yhchfhhdrfcotlvyoogz.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InloY2hmaGhkcmZjb3Rsdnlvb2d6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxMjEwNTAsImV4cCI6MjA4NDY5NzA1MH0.W5W4DA5_GdC0--WwTSVsBIKZi88xxJDKf4ri2m8gjxk';
+    
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+    const Icon = ({ name }) => <i className={`fas fa-${name}`}></i>;
 
-  // Load data from storage
-  useEffect(() => {
-    loadData();
-  }, []);
+    function BandTracker() {
+      const [songs, setSongs] = useState([]);
+      const [gigs, setGigs] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [isUnlocked, setIsUnlocked] = useState(false);
+      const [password, setPassword] = useState('');
+      const [error, setError] = useState('');
 
-  const loadData = async () => {
-    try {
-      const songsResult = await window.storage.get('band-songs');
-      const gigsResult = await window.storage.get('band-gigs');
-      
-      if (songsResult) setSongs(JSON.parse(songsResult.value));
-      if (gigsResult) setGigs(JSON.parse(gigsResult.value));
-    } catch (error) {
-      console.log('No existing data found');
-    } finally {
-      setLoading(false);
-    }
-  };
+      useEffect(() => { loadData(); }, []);
 
-  const saveData = async (newSongs, newGigs) => {
-    try {
-      await window.storage.set('band-songs', JSON.stringify(newSongs || songs));
-      await window.storage.set('band-gigs', JSON.stringify(newGigs || gigs));
-    } catch (error) {
-      console.error('Error saving data:', error);
-    }
-  };
+      const loadData = async () => {
+        const { data: songsData } = await supabaseClient.from('songs').select('*').order('created_at', { ascending: false });
+        const { data: gigsData } = await supabaseClient.from('gigs').select('*').order('date', { ascending: false });
+        const { data: setlistData } = await supabaseClient.from('setlist_items').select('*').order('position');
+        
+        if (songsData) setSongs(songsData);
+        if (gigsData && setlistData) {
+          const gigsWithSetlists = gigsData.map(gig => ({
+            ...gig,
+            setlist: setlistData.filter(i => i.gig_id === gig.id).sort((a,b) => a.position - b.position).map(i => i.song_id)
+          }));
+          setGigs(gigsWithSetlists);
+        }
+        setLoading(false);
+      };
 
-  // Song management
-  const addSong = () => {
-    const newSong = {
-      id: Date.now(),
-      title: '',
-      artist: '',
-      duration: '',
-      key: '',
-      genre: '',
-      composers: '',
-      voicing: '',
-      notes: '',
-      editing: true
-    };
-    const newSongs = [...songs, newSong];
-    setSongs(newSongs);
-    setEditingId(newSong.id);
-  };
+      const addSong = async () => {
+        const title = prompt('Song title:');
+        if (!title) return;
+        const { data } = await supabaseClient.from('songs').insert([{ title, artist: '', genre: '', composers: '', voicing: '', duration: '', key: '', notes: '' }]).select();
+        if (data) setSongs([data[0], ...songs]);
+      };
 
-  const updateSong = (id, field, value) => {
-    const newSongs = songs.map(song =>
-      song.id === id ? { ...song, [field]: value } : song
-    );
-    setSongs(newSongs);
-  };
+      const deleteSong = async (id) => {
+        if (!confirm('Delete this song?')) return;
+        await supabaseClient.from('songs').delete().eq('id', id);
+        setSongs(songs.filter(s => s.id !== id));
+      };
 
-  const saveSong = (id) => {
-    const song = songs.find(s => s.id === id);
-    if (song.title.trim()) {
-      const newSongs = songs.map(s =>
-        s.id === id ? { ...s, editing: false } : s
-      );
-      setSongs(newSongs);
-      saveData(newSongs, null);
-      setEditingId(null);
-    }
-  };
+      const addGig = async () => {
+        const name = prompt('Gig name:');
+        if (!name) return;
+        const { data } = await supabaseClient.from('gigs').insert([{ name, venue: '', date: null, time: '', notes: '' }]).select();
+        if (data) setGigs([{ ...data[0], setlist: [] }, ...gigs]);
+      };
 
-  const saveAllSongs = () => {
-    saveData(songs, null);
-    alert('All changes saved!');
-  };
+      const deleteGig = async (id) => {
+        if (!confirm('Delete this gig?')) return;
+        await supabaseClient.from('gigs').delete().eq('id', id);
+        setGigs(gigs.filter(g => g.id !== id));
+      };
 
-  const deleteSong = (id) => {
-    const newSongs = songs.filter(song => song.id !== id);
-    setSongs(newSongs);
-    saveData(newSongs, null);
-  };
+      const addToSetlist = async (gigId, songId) => {
+        const gig = gigs.find(g => g.id === gigId);
+        if (gig.setlist.includes(songId)) return;
+        const newSetlist = [...gig.setlist, songId];
+        await supabaseClient.from('setlist_items').insert({ gig_id: gigId, song_id: songId, position: newSetlist.length - 1 });
+        setGigs(gigs.map(g => g.id === gigId ? { ...g, setlist: newSetlist } : g));
+      };
 
-  const toggleSongSelection = (id) => {
-    setSelectedSongs(prev =>
-      prev.includes(id)
-        ? prev.filter(songId => songId !== id)
-        : [...prev, id]
-    );
-  };
+      const removeFromSetlist = async (gigId, songId) => {
+        await supabaseClient.from('setlist_items').delete().eq('gig_id', gigId).eq('song_id', songId);
+        const gig = gigs.find(g => g.id === gigId);
+        const newSetlist = gig.setlist.filter(id => id !== songId);
+        if (newSetlist.length > 0) {
+          await supabaseClient.from('setlist_items').delete().eq('gig_id', gigId);
+          await supabaseClient.from('setlist_items').insert(newSetlist.map((sid, i) => ({ gig_id: gigId, song_id: sid, position: i })));
+        }
+        setGigs(gigs.map(g => g.id === gigId ? { ...g, setlist: newSetlist } : g));
+      };
 
-  const toggleAllSongs = () => {
-    if (selectedSongs.length === songs.length) {
-      setSelectedSongs([]);
-    } else {
-      setSelectedSongs(songs.map(s => s.id));
-    }
-  };
+      const exportCSV = () => {
+        const csv = Papa.unparse(songs.map(s => ({ title: s.title, artist: s.artist, genre: s.genre, composers: s.composers, voicing: s.voicing, duration: s.duration, key: s.key, notes: s.notes })));
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `repertoire_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+      };
 
-  const deleteSelectedSongs = () => {
-    console.log('Delete button clicked, selected songs:', selectedSongs);
-    if (selectedSongs.length === 0) {
-      console.log('No songs selected');
-      return;
-    }
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = () => {
-    const newSongs = songs.filter(song => !selectedSongs.includes(song.id));
-    setSongs(newSongs);
-    saveData(newSongs, null);
-    setSelectedSongs([]);
-    setShowDeleteConfirm(false);
-  };
-
-  const cancelDelete = () => {
-    setShowDeleteConfirm(false);
-  };
-
-  // CSV Import
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const importedSongs = results.data.map((row, index) => ({
-          id: Date.now() + index,
-          title: row.title || row.Title || row.song || row.Song || '',
-          artist: row.artist || row.Artist || row.original || row.Original || '',
-          duration: row.duration || row.Duration || row.length || row.Length || '',
-          key: row.key || row.Key || '',
-          genre: row.genre || row.Genre || '',
-          composers: row.composers || row.Composers || row.composer || row.Composer || '',
-          voicing: row.voicing || row.Voicing || '',
-          notes: row.notes || row.Notes || '',
-          editing: false
-        })).filter(song => song.title.trim() !== '');
-
-        if (importedSongs.length > 0) {
-          const newSongs = [...songs, ...importedSongs];
-          setSongs(newSongs);
-          saveData(newSongs, null);
-          alert(`Successfully imported ${importedSongs.length} songs!`);
+      const handleLogin = () => {
+        if (password === 'rwosings') {
+          setIsUnlocked(true);
+          setError('');
         } else {
-          alert('No valid songs found in the file. Make sure your CSV has a "title" column.');
+          setError('Incorrect password');
         }
-      },
-      error: (error) => {
-        console.error('Error parsing CSV:', error);
-        alert('Error reading file. Please make sure it\'s a valid CSV file.');
-      }
-    });
+      };
 
-    e.target.value = '';
-  };
+      if (loading) return <div className="flex items-center justify-center h-screen bg-gradient-to-br from-purple-900 to-indigo-900 text-white text-2xl">Loading...</div>;
 
-  // Gig management
-  const addGig = () => {
-    const newGig = {
-      id: Date.now(),
-      name: '',
-      venue: '',
-      date: '',
-      time: '',
-      setlist: [],
-      notes: '',
-      editing: true
-    };
-    const newGigs = [...gigs, newGig];
-    setGigs(newGigs);
-    setEditingId(newGig.id);
-  };
-
-  const updateGig = (id, field, value) => {
-    const newGigs = gigs.map(gig =>
-      gig.id === id ? { ...gig, [field]: value } : gig
-    );
-    setGigs(newGigs);
-  };
-
-  const saveGig = (id) => {
-    const gig = gigs.find(g => g.id === id);
-    if (gig.name.trim()) {
-      const newGigs = gigs.map(g =>
-        g.id === id ? { ...g, editing: false } : g
-      );
-      setGigs(newGigs);
-      saveData(null, newGigs);
-      setEditingId(null);
-    }
-  };
-
-  const deleteGig = (id) => {
-    const newGigs = gigs.filter(gig => gig.id !== id);
-    setGigs(newGigs);
-    saveData(null, newGigs);
-  };
-
-  const toggleSongInSetlist = (gigId, songId) => {
-    const newGigs = gigs.map(gig => {
-      if (gig.id === gigId) {
-        const setlist = gig.setlist.includes(songId)
-          ? gig.setlist.filter(id => id !== songId)
-          : [...gig.setlist, songId];
-        return { ...gig, setlist };
-      }
-      return gig;
-    });
-    setGigs(newGigs);
-    saveData(null, newGigs);
-  };
-
-  const addSongToSetlist = (gigId, songId) => {
-    const newGigs = gigs.map(gig => {
-      if (gig.id === gigId) {
-        if (!gig.setlist.includes(songId)) {
-          return { ...gig, setlist: [...gig.setlist, songId] };
-        }
-      }
-      return gig;
-    });
-    setGigs(newGigs);
-    saveData(null, newGigs);
-    // Clear search for this gig
-    setSearchQuery(prev => ({ ...prev, [gigId]: '' }));
-    setShowSuggestions(prev => ({ ...prev, [gigId]: false }));
-  };
-
-  const getFilteredSongs = (gigId) => {
-    const gig = gigs.find(g => g.id === gigId);
-    if (!gig) return [];
-    
-    const query = searchQuery[gigId] || '';
-    if (!query.trim()) return [];
-    
-    const lowerQuery = query.toLowerCase();
-    return songs.filter(song => 
-      !gig.setlist.includes(song.id) &&
-      (song.title.toLowerCase().includes(lowerQuery) ||
-       song.artist?.toLowerCase().includes(lowerQuery) ||
-       song.genre?.toLowerCase().includes(lowerQuery))
-    );
-  };
-
-  const moveSetlistSong = (gigId, songId, direction) => {
-    const newGigs = gigs.map(gig => {
-      if (gig.id === gigId) {
-        const setlist = [...gig.setlist];
-        const index = setlist.indexOf(songId);
-        if (index === -1) return gig;
-        
-        const newIndex = direction === 'up' ? index - 1 : index + 1;
-        if (newIndex < 0 || newIndex >= setlist.length) return gig;
-        
-        [setlist[index], setlist[newIndex]] = [setlist[newIndex], setlist[index]];
-        return { ...gig, setlist };
-      }
-      return gig;
-    });
-    setGigs(newGigs);
-    saveData(null, newGigs);
-  };
-
-  const removeFromSetlist = (gigId, songId) => {
-    const newGigs = gigs.map(gig => {
-      if (gig.id === gigId) {
-        return { ...gig, setlist: gig.setlist.filter(id => id !== songId) };
-      }
-      return gig;
-    });
-    setGigs(newGigs);
-    saveData(null, newGigs);
-  };
-
-  const toggleGigExpanded = (gigId) => {
-    setExpandedGigs(prev => ({ ...prev, [gigId]: !prev[gigId] }));
-  };
-
-  const expandAllGigs = () => {
-    const allExpanded = {};
-    gigs.forEach(gig => {
-      allExpanded[gig.id] = true;
-    });
-    setExpandedGigs(allExpanded);
-  };
-
-  const collapseAllGigs = () => {
-    setExpandedGigs({});
-  };
-
-  // Export to CSV
-  const exportRepertoireToCSV = () => {
-    const csv = Papa.unparse(songs.map(song => ({
-      title: song.title,
-      artist: song.artist || '',
-      genre: song.genre || '',
-      composers: song.composers || '',
-      voicing: song.voicing || '',
-      duration: song.duration || '',
-      key: song.key || '',
-      notes: song.notes || ''
-    })));
-    
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `repertoire_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const exportGigsToCSV = () => {
-    const gigsData = gigs.map(gig => ({
-      name: gig.name,
-      venue: gig.venue || '',
-      date: gig.date || '',
-      time: gig.time || '',
-      notes: gig.notes || '',
-      setlist_count: gig.setlist.length,
-      setlist: gig.setlist.map(id => songs.find(s => s.id === id)?.title || '').join('; ')
-    }));
-    
-    const csv = Papa.unparse(gigsData);
-    
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `gigs_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Filter and sort songs
-  const getFilteredAndSortedSongs = () => {
-    let filtered = songs;
-    
-    // Apply search filter
-    if (repertoireSearch.trim()) {
-      const query = repertoireSearch.toLowerCase();
-      filtered = songs.filter(song =>
-        song.title.toLowerCase().includes(query) ||
-        song.artist?.toLowerCase().includes(query) ||
-        song.genre?.toLowerCase().includes(query) ||
-        song.composers?.toLowerCase().includes(query) ||
-        song.key?.toLowerCase().includes(query)
-      );
-    }
-    
-    // Apply sort
-    const sorted = [...filtered].sort((a, b) => {
-      switch (repertoireSort) {
-        case 'title':
-          return a.title.localeCompare(b.title);
-        case 'artist':
-          return (a.artist || '').localeCompare(b.artist || '');
-        case 'genre':
-          return (a.genre || '').localeCompare(b.genre || '');
-        case 'key':
-          return (a.key || '').localeCompare(b.key || '');
-        case 'date':
-          return b.id - a.id; // Most recent first
-        default:
-          return 0;
-      }
-    });
-    
-    return sorted;
-  };
-
-  // Filter and sort gigs
-  const getFilteredAndSortedGigs = () => {
-    let filtered = gigs;
-    
-    // Apply search filter
-    if (gigsSearch.trim()) {
-      const query = gigsSearch.toLowerCase();
-      filtered = gigs.filter(gig =>
-        gig.name.toLowerCase().includes(query) ||
-        gig.venue?.toLowerCase().includes(query) ||
-        gig.notes?.toLowerCase().includes(query)
-      );
-    }
-    
-    // Apply sort
-    const sorted = [...filtered].sort((a, b) => {
-      switch (gigsSort) {
-        case 'date':
-          if (!a.date && !b.date) return 0;
-          if (!a.date) return 1;
-          if (!b.date) return -1;
-          return new Date(b.date) - new Date(a.date); // Most recent first
-        case 'name':
-          return a.name.localeCompare(b.name);
-        case 'venue':
-          return (a.venue || '').localeCompare(b.venue || '');
-        default:
-          return 0;
-      }
-    });
-    
-    return sorted;
-  };
-
-  if (loading) {
-    return <div className="flex items-center justify-center h-screen">Loading...</div>;
-  }
-
-  const handlePasswordSubmit = () => {
-    console.log('Password submitted:', passwordInput);
-    console.log('Expected password: rwosings');
-    console.log('Match:', passwordInput === 'rwosings');
-    
-    if (passwordInput === 'rwosings') {
-      console.log('Password correct, unlocking...');
-      setIsUnlocked(true);
-      setShowPasswordScreen(false);
-      setShowPasswordError(false);
-      setPasswordInput('');
-    } else {
-      console.log('Password incorrect');
-      setShowPasswordError(true);
-    }
-  };
-
-  const handleReadOnlyMode = () => {
-    setShowPasswordScreen(false);
-    setIsUnlocked(false);
-  };
-
-  // Password lock screen
-  if (showPasswordScreen) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-6">
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-8 max-w-md w-full">
-          <div className="text-center mb-8">
-            <Music className="w-16 h-16 text-white mx-auto mb-4" />
-            <h1 className="text-3xl font-bold text-white mb-2">Band Activity Tracker</h1>
-            <p className="text-white/70">Enter password to unlock editing</p>
-          </div>
-          
-          <div className="space-y-4">
-            <div>
+      if (!isUnlocked) {
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 flex items-center justify-center p-6">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 max-w-md w-full">
+              <div className="text-center mb-6">
+                <Icon name="music" className="text-6xl text-white mb-4" />
+                <h1 className="text-3xl font-bold text-white">Band Activity Tracker</h1>
+              </div>
               <input
                 type="password"
-                value={passwordInput}
-                onChange={(e) => {
-                  setPasswordInput(e.target.value);
-                  setShowPasswordError(false);
-                }}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    handlePasswordSubmit();
-                  }
-                }}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && handleLogin()}
                 placeholder="Enter password"
-                className="w-full bg-white/20 text-white placeholder-white/50 px-4 py-3 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
+                className="w-full bg-white/20 text-white placeholder-white/50 px-4 py-3 rounded-lg mb-4"
               />
-              {showPasswordError && (
-                <p className="text-red-300 text-sm mt-2">Incorrect password. Please try again.</p>
-              )}
-            </div>
-            
-            <button
-              type="button"
-              onClick={handlePasswordSubmit}
-              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-all"
-            >
-              Unlock
-            </button>
-          </div>
-          
-          <div className="mt-6 pt-6 border-t border-white/20">
-            <p className="text-white/60 text-sm text-center">
-              You can still view data in read-only mode without unlocking.
-            </p>
-            <button
-              onClick={handleReadOnlyMode}
-              className="w-full mt-3 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              Continue in Read-Only Mode
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gradient-to-br from-purple-800 to-blue-800 rounded-lg p-6 max-w-md mx-4 shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-4">Confirm Deletion</h3>
-            <p className="text-white/90 mb-6">
-              Are you sure you want to delete {selectedSongs.length} selected song(s)? This action cannot be undone.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={cancelDelete}
-                className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                Delete
-              </button>
+              {error && <p className="text-red-300 text-sm mb-4">{error}</p>}
+              <button onClick={handleLogin} className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold px-6 py-3 rounded-lg">Unlock</button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      }
 
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-6">
-            <div className="flex items-center justify-between">
-              <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                <Music className="w-8 h-8" />
-                Band Activity Tracker
-                {!isUnlocked && <span className="text-sm font-normal text-white/80">(Read-Only)</span>}
-              </h1>
-              <div>
-                {isUnlocked ? (
-                  <button
-                    onClick={() => {
-                      setIsUnlocked(false);
-                      setShowPasswordScreen(true);
-                    }}
-                    className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
-                  >
-                    <Lock className="w-4 h-4" />
-                    Lock
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowPasswordScreen(true)}
-                    className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
-                  >
-                    <Unlock className="w-4 h-4" />
-                    Unlock
-                  </button>
-                )}
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 p-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden">
+              <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-6 flex justify-between items-center">
+                <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                  <Icon name="music" /> Band Activity Tracker
+                </h1>
+                <button onClick={() => setIsUnlocked(false)} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                  <Icon name="lock" /> Lock
+                </button>
               </div>
-            </div>
-          </div>
 
-          {/* Tabs */}
-          <div className="flex border-b border-white/20">
-            <button
-              onClick={() => setActiveTab('repertoire')}
-              className={`flex-1 px-6 py-4 font-semibold transition-colors ${
-                activeTab === 'repertoire'
-                  ? 'bg-white/20 text-white border-b-2 border-white'
-                  : 'text-white/70 hover:bg-white/10'
-              }`}
-            >
-              <Music className="w-5 h-5 inline mr-2" />
-              Repertoire
-            </button>
-            <button
-              onClick={() => setActiveTab('gigs')}
-              className={`flex-1 px-6 py-4 font-semibold transition-colors ${
-                activeTab === 'gigs'
-                  ? 'bg-white/20 text-white border-b-2 border-white'
-                  : 'text-white/70 hover:bg-white/10'
-              }`}
-            >
-              <Calendar className="w-5 h-5 inline mr-2" />
-              Gigs & Setlists
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="p-6">
-            {activeTab === 'repertoire' && (
-              <div>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-white">Song Repertoire</h2>
-                  <div className="flex gap-2">
-                    <div className="bg-white/10 rounded-lg p-1 flex gap-1">
-                      <button
-                        onClick={() => setViewMode('cards')}
-                        className={`px-3 py-1 rounded transition-colors ${
-                          viewMode === 'cards'
-                            ? 'bg-white/20 text-white'
-                            : 'text-white/60 hover:text-white'
-                        }`}
-                      >
-                        Cards
+              <div className="p-6">
+                <div className="mb-8">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold text-white">Repertoire ({songs.length} songs)</h2>
+                    <div className="flex gap-2">
+                      <button onClick={exportCSV} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                        <Icon name="download" /> Export CSV
                       </button>
-                      <button
-                        onClick={() => setViewMode('spreadsheet')}
-                        className={`px-3 py-1 rounded transition-colors ${
-                          viewMode === 'spreadsheet'
-                            ? 'bg-white/20 text-white'
-                            : 'text-white/60 hover:text-white'
-                        }`}
-                      >
-                        Spreadsheet
+                      <button onClick={addSong} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                        <Icon name="plus" /> Add Song
                       </button>
                     </div>
-                    <button
-                      onClick={exportRepertoireToCSV}
-                      className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                    >
-                      <Download className="w-5 h-5" />
-                      Export CSV
-                    </button>
-                    {isUnlocked && (
-                      <>
-                        <label className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors cursor-pointer">
-                          <Upload className="w-5 h-5" />
-                          Import CSV
-                          <input
-                            type="file"
-                            accept=".csv,.xlsx,.xls"
-                            onChange={handleFileUpload}
-                            className="hidden"
-                          />
-                        </label>
-                        <button
-                          onClick={addSong}
-                          className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                        >
-                          <Plus className="w-5 h-5" />
-                          Add Song
-                        </button>
-                      </>
-                    )}
                   </div>
-                </div>
-
-                {/* Search and Sort Controls */}
-                <div className="mb-4 flex gap-3">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/50" />
-                    <input
-                      type="text"
-                      placeholder="Search songs..."
-                      value={repertoireSearch}
-                      onChange={(e) => setRepertoireSearch(e.target.value)}
-                      className="w-full bg-white/10 text-white placeholder-white/50 pl-10 pr-4 py-2 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
-                    />
-                  </div>
-                  <select
-                    value={repertoireSort}
-                    onChange={(e) => setRepertoireSort(e.target.value)}
-                    className="bg-white/10 text-white px-4 py-2 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
-                  >
-                    <option value="title">Sort by Title</option>
-                    <option value="artist">Sort by Artist</option>
-                    <option value="genre">Sort by Genre</option>
-                    <option value="key">Sort by Key</option>
-                    <option value="date">Sort by Date Added</option>
-                  </select>
-                </div>
-
-                <div className="space-y-4">
-                  {viewMode === 'spreadsheet' ? (
-                    <div className="bg-white/10 backdrop-blur rounded-lg overflow-hidden">
-                      {selectedSongs.length > 0 && isUnlocked && (
-                        <div className="bg-red-500/20 border-b border-red-500/30 px-4 py-3 flex items-center justify-between">
-                          <span className="text-white font-semibold">
-                            {selectedSongs.length} song(s) selected
-                          </span>
-                          <button
-                            onClick={deleteSelectedSongs}
-                            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Delete Selected
-                          </button>
-                        </div>
-                      )}
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-white/20">
-                            <tr>
-                              {isUnlocked && (
-                                <th className="px-3 py-3 text-center w-12">
-                                  <input
-                                    type="checkbox"
-                                    checked={getFilteredAndSortedSongs().length > 0 && selectedSongs.length === getFilteredAndSortedSongs().length}
-                                    onChange={toggleAllSongs}
-                                    className="w-4 h-4 cursor-pointer"
-                                  />
-                                </th>
-                              )}
-                              <th className="px-3 py-3 text-left text-white font-semibold text-sm">Title</th>
-                              <th className="px-3 py-3 text-left text-white font-semibold text-sm">Artist</th>
-                              <th className="px-3 py-3 text-left text-white font-semibold text-sm">Genre</th>
-                              <th className="px-3 py-3 text-left text-white font-semibold text-sm">Composers</th>
-                              <th className="px-3 py-3 text-left text-white font-semibold text-sm">Voicing</th>
-                              <th className="px-3 py-3 text-left text-white font-semibold text-sm">Duration</th>
-                              <th className="px-3 py-3 text-left text-white font-semibold text-sm">Key</th>
-                              <th className="px-3 py-3 text-left text-white font-semibold text-sm">Notes</th>
-                              {isUnlocked && (
-                                <th className="px-3 py-3 text-center text-white font-semibold text-sm w-20">Actions</th>
-                              )}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {getFilteredAndSortedSongs().map((song, index) => (
-                              <tr key={song.id} className={`border-b border-white/10 ${index % 2 === 0 ? 'bg-white/5' : ''} ${selectedSongs.includes(song.id) ? 'bg-blue-500/20' : ''}`}>
-                                {isUnlocked && (
-                                  <td className="px-3 py-2 text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedSongs.includes(song.id)}
-                                      onChange={() => toggleSongSelection(song.id)}
-                                      className="w-4 h-4 cursor-pointer"
-                                    />
-                                  </td>
-                                )}
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={song.title}
-                                    onChange={(e) => updateSong(song.id, 'title', e.target.value)}
-                                    disabled={!isUnlocked}
-                                    className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                                    placeholder="Song title"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={song.artist}
-                                    onChange={(e) => updateSong(song.id, 'artist', e.target.value)}
-                                    disabled={!isUnlocked}
-                                    className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                                    placeholder="Artist"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={song.genre}
-                                    onChange={(e) => updateSong(song.id, 'genre', e.target.value)}
-                                    disabled={!isUnlocked}
-                                    className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                                    placeholder="Genre"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={song.composers}
-                                    onChange={(e) => updateSong(song.id, 'composers', e.target.value)}
-                                    disabled={!isUnlocked}
-                                    className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                                    placeholder="Composers"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={song.voicing}
-                                    onChange={(e) => updateSong(song.id, 'voicing', e.target.value)}
-                                    disabled={!isUnlocked}
-                                    className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                                    placeholder="Voicing"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={song.duration}
-                                    onChange={(e) => updateSong(song.id, 'duration', e.target.value)}
-                                    disabled={!isUnlocked}
-                                    className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                                    placeholder="3:45"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={song.key}
-                                    onChange={(e) => updateSong(song.id, 'key', e.target.value)}
-                                    disabled={!isUnlocked}
-                                    className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                                    placeholder="Am"
-                                  />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <input
-                                    type="text"
-                                    value={song.notes}
-                                    onChange={(e) => updateSong(song.id, 'notes', e.target.value)}
-                                    disabled={!isUnlocked}
-                                    className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                                    placeholder="Notes"
-                                  />
-                                </td>
-                                {isUnlocked && (
-                                  <td className="px-3 py-2 text-center">
-                                    <button
-                                      onClick={() => deleteSong(song.id)}
-                                      className="text-red-300 hover:text-red-100 transition-colors"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      {getFilteredAndSortedSongs().length > 0 && isUnlocked && (
-                        <div className="p-4 border-t border-white/20 flex justify-end">
-                          <button
-                            onClick={saveAllSongs}
-                            className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                          >
-                            <Save className="w-5 h-5" />
-                            Save All Changes
-                          </button>
-                        </div>
-                      )}
-                      {getFilteredAndSortedSongs().length === 0 && (
-                        <p className="text-white/50 text-center py-8">
-                          {repertoireSearch ? 'No songs found matching your search.' : 'No songs yet. Add your first song to get started!'}
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      {getFilteredAndSortedSongs().map(song => (
-                    <div key={song.id} className="bg-white/10 backdrop-blur rounded-lg p-4">
-                      {song.editing || editingId === song.id ? (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <input
-                              type="text"
-                              placeholder="Song Title"
-                              value={song.title}
-                              onChange={(e) => updateSong(song.id, 'title', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Artist/Original"
-                              value={song.artist}
-                              onChange={(e) => updateSong(song.id, 'artist', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <input
-                              type="text"
-                              placeholder="Genre"
-                              value={song.genre}
-                              onChange={(e) => updateSong(song.id, 'genre', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Composers"
-                              value={song.composers}
-                              onChange={(e) => updateSong(song.id, 'composers', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                          </div>
-                          <div className="grid grid-cols-3 gap-3">
-                            <input
-                              type="text"
-                              placeholder="Voicing"
-                              value={song.voicing}
-                              onChange={(e) => updateSong(song.id, 'voicing', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Duration (e.g., 3:45)"
-                              value={song.duration}
-                              onChange={(e) => updateSong(song.id, 'duration', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Key (e.g., Am)"
-                              value={song.key}
-                              onChange={(e) => updateSong(song.id, 'key', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                          </div>
-                          <textarea
-                            placeholder="Notes"
-                            value={song.notes}
-                            onChange={(e) => updateSong(song.id, 'notes', e.target.value)}
-                            className="w-full bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60 resize-none"
-                            rows="2"
-                          />
-                                  <div className="flex gap-2">
-                            <button
-                              onClick={() => saveSong(song.id)}
-                              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"
-                              disabled={!isUnlocked}
-                            >
-                              <Save className="w-4 h-4" />
-                              Save
-                            </button>
-                            <button
-                              onClick={() => deleteSong(song.id)}
-                              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"
-                              disabled={!isUnlocked}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <h3 className="text-xl font-bold text-white">{song.title}</h3>
-                            <div className="text-white/70 mt-1">
-                              {song.artist && <span className="mr-4">Artist: {song.artist}</span>}
-                              {song.genre && <span className="mr-4">Genre: {song.genre}</span>}
-                              {song.composers && <span className="mr-4">Composers: {song.composers}</span>}
-                            </div>
-                            <div className="text-white/70 mt-1">
-                              {song.voicing && <span className="mr-4">Voicing: {song.voicing}</span>}
-                              {song.duration && <span className="mr-4">Duration: {song.duration}</span>}
-                              {song.key && <span>Key: {song.key}</span>}
-                            </div>
-                            {song.notes && <p className="text-white/60 mt-2 text-sm">{song.notes}</p>}
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setEditingId(song.id)}
-                              className="text-blue-300 hover:text-blue-100"
-                              disabled={!isUnlocked}
-                            >
-                              <Edit2 className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => deleteSong(song.id)}
-                              className="text-red-300 hover:text-red-100"
-                              disabled={!isUnlocked}
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {getFilteredAndSortedSongs().length === 0 && (
-                    <p className="text-white/50 text-center py-8">
-                      {repertoireSearch ? 'No songs found matching your search.' : 'No songs yet. Add your first song to get started!'}
-                    </p>
-                  )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'gigs' && (
-              <div>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-white">Gigs & Setlists</h2>
-                  <div className="flex gap-2">
-                    {gigs.length > 0 && (
-                      <>
-                        <button
-                          onClick={expandAllGigs}
-                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                        >
-                          Expand All
-                        </button>
-                        <button
-                          onClick={collapseAllGigs}
-                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                        >
-                          Collapse All
-                        </button>
-                      </>
-                    )}
-                    <button
-                      onClick={exportGigsToCSV}
-                      className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                    >
-                      <Download className="w-5 h-5" />
-                      Export CSV
-                    </button>
-                    {isUnlocked && (
-                      <button
-                        onClick={addGig}
-                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-                      >
-                        <Plus className="w-5 h-5" />
-                        Add Gig
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Search and Sort Controls */}
-                <div className="mb-4 flex gap-3">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/50" />
-                    <input
-                      type="text"
-                      placeholder="Search gigs..."
-                      value={gigsSearch}
-                      onChange={(e) => setGigsSearch(e.target.value)}
-                      className="w-full bg-white/10 text-white placeholder-white/50 pl-10 pr-4 py-2 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
-                    />
-                  </div>
-                  <select
-                    value={gigsSort}
-                    onChange={(e) => setGigsSort(e.target.value)}
-                    className="bg-white/10 text-white px-4 py-2 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
-                  >
-                    <option value="date">Sort by Date</option>
-                    <option value="name">Sort by Name</option>
-                    <option value="venue">Sort by Venue</option>
-                  </select>
-                </div>
-
-                <div className="space-y-4">
-                  {getFilteredAndSortedGigs().map(gig => (
-                    <div key={gig.id} className="bg-white/10 backdrop-blur rounded-lg p-4">
-                      {gig.editing || editingId === gig.id ? (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <input
-                              type="text"
-                              placeholder="Gig Name"
-                              value={gig.name}
-                              onChange={(e) => updateGig(gig.id, 'name', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Venue"
-                              value={gig.venue}
-                              onChange={(e) => updateGig(gig.id, 'venue', e.target.value)}
-                              className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <input
-                              type="date"
-                              value={gig.date}
-                              onChange={(e) => updateGig(gig.id, 'date', e.target.value)}
-                              className="bg-white/20 text-white px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                            <input
-                              type="time"
-                              value={gig.time}
-                              onChange={(e) => updateGig(gig.id, 'time', e.target.value)}
-                              className="bg-white/20 text-white px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
-                            />
-                          </div>
-                          <textarea
-                            placeholder="Notes"
-                            value={gig.notes}
-                            onChange={(e) => updateGig(gig.id, 'notes', e.target.value)}
-                            className="w-full bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60 resize-none"
-                            rows="2"
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => saveGig(gig.id)}
-                              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"
-                            >
-                              <Save className="w-4 h-4" />
-                              Save
-                            </button>
-                            <button
-                              onClick={() => deleteGig(gig.id)}
-                              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
+                  <div className="grid gap-3">
+                    {songs.map(song => (
+                      <div key={song.id} className="bg-white/10 p-4 rounded-lg flex justify-between items-center">
                         <div>
-                          <div className="flex justify-between items-start mb-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => toggleGigExpanded(gig.id)}
-                                  className="text-white/70 hover:text-white transition-colors p-1 -ml-1"
-                                >
-                                  {expandedGigs[gig.id] ? (
-                                    <ChevronDown className="w-5 h-5" />
-                                  ) : (
-                                    <ChevronRight className="w-5 h-5" />
-                                  )}
-                                </button>
-                                <h3 className="text-xl font-bold text-white">{gig.name}</h3>
-                              </div>
-                              <div className="text-white/70 mt-1 ml-8">
-                                {gig.venue && <span className="mr-4">📍 {gig.venue}</span>}
-                                {gig.date && <span className="mr-4">📅 {gig.date}</span>}
-                                {gig.time && <span className="mr-3">🕐 {gig.time}</span>}
-                                <span className="text-white/50">({gig.setlist.length} songs)</span>
-                              </div>
-                              {gig.notes && <p className="text-white/60 mt-2 text-sm ml-8">{gig.notes}</p>}
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setEditingId(gig.id)}
-                                className="text-blue-300 hover:text-blue-100"
-                                disabled={!isUnlocked}
-                              >
-                                <Edit2 className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => deleteGig(gig.id)}
-                                className="text-red-300 hover:text-red-100"
-                                disabled={!isUnlocked}
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </div>
+                          <h3 className="text-white font-bold text-lg">{song.title}</h3>
+                          {song.artist && <p className="text-white/70 text-sm">{song.artist}</p>}
+                          <div className="text-white/60 text-sm mt-1">
+                            {song.genre && <span className="mr-3">Genre: {song.genre}</span>}
+                            {song.duration && <span className="mr-3">⏱️ {song.duration}</span>}
+                            {song.key && <span>🎵 {song.key}</span>}
                           </div>
-
-                          {expandedGigs[gig.id] && (
-                            <div className="mt-4 border-t border-white/20 pt-4 ml-8">
-                            {/* Add Songs Section with Typeahead - MOVED TO TOP */}
-                            <div className="relative mb-4">
-                              <h5 className="text-white/80 text-sm font-semibold mb-2">Add Song:</h5>
-                              <div className="relative">
-                                <input
-                                  type="text"
-                                  placeholder="Search songs by title, artist, or genre..."
-                                  value={searchQuery[gig.id] || ''}
-                                  onChange={(e) => {
-                                    setSearchQuery(prev => ({ ...prev, [gig.id]: e.target.value }));
-                                    setShowSuggestions(prev => ({ ...prev, [gig.id]: true }));
-                                  }}
-                                  onFocus={() => setShowSuggestions(prev => ({ ...prev, [gig.id]: true }))}
-                                  onBlur={() => setTimeout(() => setShowSuggestions(prev => ({ ...prev, [gig.id]: false })), 200)}
-                                  className="w-full bg-white/10 text-white placeholder-white/50 px-4 py-2 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
-                                />
-                                
-                                {/* Suggestions Dropdown */}
-                                {showSuggestions[gig.id] && searchQuery[gig.id]?.trim() && (
-                                  <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50 border border-white/20">
-                                    {getFilteredSongs(gig.id).length > 0 ? (
-                                      getFilteredSongs(gig.id).map(song => (
-                                        <button
-                                          key={song.id}
-                                          onClick={() => addSongToSetlist(gig.id, song.id)}
-                                          className="w-full text-left px-4 py-3 hover:bg-white/10 transition-colors border-b border-white/10 last:border-b-0"
-                                        >
-                                          <div className="text-white font-semibold">{song.title}</div>
-                                          <div className="text-white/60 text-sm">
-                                            {song.artist && <span className="mr-3">{song.artist}</span>}
-                                            {song.duration && <span className="mr-3">⏱️ {song.duration}</span>}
-                                            {song.key && <span>🎵 {song.key}</span>}
-                                          </div>
-                                        </button>
-                                      ))
-                                    ) : (
-                                      <div className="px-4 py-3 text-white/50 text-sm">
-                                        No songs found matching "{searchQuery[gig.id]}"
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                              {songs.length === 0 && (
-                                <p className="text-white/50 text-sm mt-2">Add songs to your repertoire first to create a setlist.</p>
-                              )}
-                            </div>
-
-                            <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
-                              <List className="w-4 h-4" />
-                              Setlist ({gig.setlist.length} songs)
-                            </h4>
-                            
-                            {/* Current Setlist */}
-                            {gig.setlist.length > 0 ? (
-                              <div className="space-y-2">
-                                {gig.setlist.map((songId, index) => {
-                                  const song = songs.find(s => s.id === songId);
-                                  if (!song) return null;
-                                  return (
-                                    <div key={songId} className="bg-white/10 hover:bg-white/15 p-3 rounded transition-colors flex items-center gap-3">
-                                      <span className="text-white/60 font-bold text-sm w-8">{index + 1}.</span>
-                                      <div className="flex-1">
-                                        <div className="text-white font-semibold">{song.title}</div>
-                                        <div className="text-white/60 text-sm">
-                                          {song.duration && <span className="mr-3">⏱️ {song.duration}</span>}
-                                          {song.key && <span className="mr-3">🎵 {song.key}</span>}
-                                          {song.artist && <span>{song.artist}</span>}
-                                        </div>
-                                      </div>
-                                      <div className="flex gap-1">
-                                        <button
-                                          onClick={() => moveSetlistSong(gig.id, songId, 'up')}
-                                          disabled={index === 0 || !isUnlocked}
-                                          className={`p-1 rounded ${index === 0 || !isUnlocked ? 'text-white/20' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
-                                          title="Move up"
-                                        >
-                                          <ChevronUp className="w-5 h-5" />
-                                        </button>
-                                        <button
-                                          onClick={() => moveSetlistSong(gig.id, songId, 'down')}
-                                          disabled={index === gig.setlist.length - 1 || !isUnlocked}
-                                          className={`p-1 rounded ${index === gig.setlist.length - 1 || !isUnlocked ? 'text-white/20' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
-                                          title="Move down"
-                                        >
-                                          <ChevronDown className="w-5 h-5" />
-                                        </button>
-                                        <button
-                                          onClick={() => removeFromSetlist(gig.id, songId)}
-                                          disabled={!isUnlocked}
-                                          className={`p-1 rounded ${!isUnlocked ? 'text-white/20' : 'text-red-300 hover:text-red-100 hover:bg-red-500/20'}`}
-                                          title="Remove from setlist"
-                                        >
-                                          <X className="w-5 h-5" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <p className="text-white/50 text-sm">No songs in setlist yet. Use the search above to add songs.</p>
-                            )}
-                          </div>
-                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
-                  {getFilteredAndSortedGigs().length === 0 && (
-                    <p className="text-white/50 text-center py-8">
-                      {gigsSearch ? 'No gigs found matching your search.' : 'No gigs scheduled yet. Add your first gig to get started!'}
-                    </p>
-                  )}
+                        <button onClick={() => deleteSong(song.id)} className="text-red-300 hover:text-red-100">
+                          <Icon name="trash" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold text-white">Gigs ({gigs.length})</h2>
+                    <button onClick={addGig} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                      <Icon name="plus" /> Add Gig
+                    </button>
+                  </div>
+                  <div className="grid gap-4">
+                    {gigs.map(gig => (
+                      <div key={gig.id} className="bg-white/10 p-4 rounded-lg">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h3 className="text-white font-bold text-lg">{gig.name}</h3>
+                            {gig.venue && <p className="text-white/70">📍 {gig.venue}</p>}
+                            {gig.date && <p className="text-white/70">📅 {gig.date}</p>}
+                          </div>
+                          <button onClick={() => deleteGig(gig.id)} className="text-red-300 hover:text-red-100">
+                            <Icon name="trash" />
+                          </button>
+                        </div>
+                        <div className="border-t border-white/20 pt-3">
+                          <h4 className="text-white/80 font-semibold mb-2">Setlist ({gig.setlist.length} songs)</h4>
+                          {gig.setlist.map((songId, idx) => {
+                            const song = songs.find(s => s.id === songId);
+                            return song ? (
+                              <div key={songId} className="bg-white/5 p-2 rounded mb-2 flex justify-between items-center">
+                                <span className="text-white">
+                                  {idx + 1}. {song.title}
+                                  {song.duration && <span className="text-white/50 ml-2 text-sm">({song.duration})</span>}
+                                </span>
+                                <button onClick={() => removeFromSetlist(gig.id, songId)} className="text-red-300 hover:text-red-100 text-sm">
+                                  <Icon name="times" />
+                                </button>
+                              </div>
+                            ) : null;
+                          })}
+                          <select
+                            onChange={(e) => { if (e.target.value) addToSetlist(gig.id, parseInt(e.target.value)); e.target.value = ''; }}
+                            className="w-full bg-white/20 text-white px-3 py-2 rounded mt-2"
+                          >
+                            <option value="">+ Add song to setlist</option>
+                            {songs.filter(s => !gig.setlist.includes(s.id)).map(song => (
+                              <option key={song.id} value={song.id}>{song.title}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
+      );
+    }
 
-ReactDOM.render(<BandTracker />, document.getElementById('root'));
+    ReactDOM.render(<BandTracker />, document.getElementById('root'));
   </script>
 </body>
 </html>
