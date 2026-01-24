@@ -505,7 +505,11 @@
           }
         });
       };
-
+      
+      const getGigsForSong = (songId) => {
+        return gigs.filter(gig => gig.setlist.includes(songId));
+      };
+      
       const handlePasswordSubmit = () => {
         if (passwordInput === 'rwosings') {
           setIsUnlocked(true);
@@ -794,6 +798,7 @@
                                 <th className="px-3 py-3 text-left text-white font-semibold text-sm">Duration</th>
                                 <th className="px-3 py-3 text-left text-white font-semibold text-sm">Key</th>
                                 <th className="px-3 py-3 text-left text-white font-semibold text-sm">Notes</th>
+                                <th className="px-3 py-3 text-left text-white font-semibold text-sm">Gigs</th>
                                 {isUnlocked && (
                                   <th className="px-3 py-3 text-center text-white font-semibold text-sm w-20">Actions</th>
                                 )}
@@ -883,6 +888,11 @@
                                       disabled={!isUnlocked}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <span className="text-white/70 text-sm">
+                                      {getGigsForSong(song.id).length || '—'}
+                                    </span>
                                   </td>
                                   {isUnlocked && (
                                     <td className="px-3 py-2 text-center">
@@ -1019,6 +1029,29 @@
                                     {song.key && <span>Key: {song.key}</span>}
                                   </div>
                                   {song.notes && <p className="text-white/60 mt-2 text-sm">{song.notes}</p>}
+                                </div>
+                                {song.notes && <p className="text-white/60 mt-2 text-sm">{song.notes}</p>}
+                                  {(() => {
+                                    const songGigs = getGigsForSong(song.id);
+                                    if (songGigs.length > 0) {
+                                      return (
+                                        <div className="mt-3 pt-3 border-t border-white/20">
+                                          <p className="text-white/80 text-sm font-semibold mb-1">
+                                            <Icon name="calendar-days" className="inline mr-1" />
+                                            Played at {songGigs.length} gig{songGigs.length !== 1 ? 's' : ''}:
+                                          </p>
+                                          <div className="flex flex-wrap gap-2">
+                                            {songGigs.map(gig => (
+                                              <span key={gig.id} className="bg-white/20 text-white text-xs px-2 py-1 rounded">
+                                                {gig.name} {gig.date && `(${gig.date})`}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                 </div>
                                 <div className="flex gap-2">
                                   <button
