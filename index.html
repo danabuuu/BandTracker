@@ -505,6 +505,9 @@
           }
         });
       };
+      const getGigsForSong = (songId) => {
+        return gigs.filter(gig => gig.setlist.includes(songId));
+      };
 
       const handlePasswordSubmit = () => {
         if (passwordInput === 'rwosings') {
@@ -1019,6 +1022,24 @@
                                     {song.key && <span>Key: {song.key}</span>}
                                   </div>
                                   {song.notes && <p className="text-white/60 mt-2 text-sm">{song.notes}</p>}
+                                  {(() => {
+                                    const songGigs = getGigsForSong(song.id);
+                                    return songGigs.length > 0 ? (
+                                      <div className="mt-3 pt-3 border-t border-white/20">
+                                        <p className="text-white/80 text-sm font-semibold mb-1">
+                                          <Icon name="calendar-days" className="inline mr-1" />
+                                          Played at {songGigs.length} gig{songGigs.length !== 1 ? 's' : ''}:
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                          {songGigs.map(gig => (
+                                            <span key={gig.id} className="bg-white/20 text-white text-xs px-2 py-1 rounded">
+                                              {gig.name} {gig.date && `(${gig.date})`}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : null;
+                                  })()}
                                 </div>
                                 <div className="flex gap-2">
                                   <button
