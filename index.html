@@ -44,12 +44,25 @@
       const [repertoireSort, setRepertoireSort] = useState('title');
       const [gigsSearch, setGigsSearch] = useState('');
       const [gigsSort, setGigsSort] = useState('date');
-      const [isUnlocked, setIsUnlocked] = useState(false);
-      const [passwordInput, setPasswordInput] = useState('');
-      const [showPasswordError, setShowPasswordError] = useState(false);
+      const [user, setUser] = useState(null);
+      const [email, setEmail] = useState('');
+      const [password, setPassword] = useState('');
+      const [showAuthError, setShowAuthError] = useState(false);
+      const [authErrorMessage, setAuthErrorMessage] = useState('');
       const [showPasswordScreen, setShowPasswordScreen] = useState(true);
 
-      useEffect(() => { loadData(); }, []);
+      useEffect(() => {
+        checkUser();
+        loadData();
+      }, []);
+
+      const checkUser = async () => {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        setUser(session?.user || null);
+        if (session?.user) {
+          setShowPasswordScreen(false);
+        }
+      };
 
       const loadData = async () => {
         try {
@@ -509,20 +522,36 @@
         return gigs.filter(gig => gig.setlist.includes(songId));
       };
 
-      const handlePasswordSubmit = () => {
-        if (passwordInput === 'rwosings') {
-          setIsUnlocked(true);
+      const handleLogin = async () => {
+        setShowAuthError(false);
+        setAuthErrorMessage('');
+        
+        try {
+          const { data, error } = await supabaseClient.auth.signInWithPassword({
+            email: email,
+            password: password,
+          });
+
+          if (error) throw error;
+
+          setUser(data.user);
           setShowPasswordScreen(false);
-          setShowPasswordError(false);
-          setPasswordInput('');
-        } else {
-          setShowPasswordError(true);
+          setEmail('');
+          setPassword('');
+        } catch (error) {
+          setShowAuthError(true);
+          setAuthErrorMessage(error.message || 'Invalid email or password');
         }
+      };
+
+      const handleLogout = async () => {
+        await supabaseClient.auth.signOut();
+        setUser(null);
+        setShowPasswordScreen(true);
       };
 
       const handleReadOnlyMode = () => {
         setShowPasswordScreen(false);
-        setIsUnlocked(false);
       };
 
       // Render: Loading State
@@ -542,38 +571,50 @@
               <div className="text-center mb-8">
                 <Icon name="music" className="text-6xl text-white mb-4" />
                 <h1 className="text-3xl font-bold text-white mb-2">Band Activity Tracker</h1>
-                <p className="text-white/70">Enter password to unlock editing</p>
+                <p className="text-white/70">Sign in to unlock editing</p>
               </div>
               <div className="space-y-4">
                 <div>
                   <input
-                    type="password"
-                    value={passwordInput}
+                    type="email"
+                    value={email}
                     onChange={(e) => {
-                      setPasswordInput(e.target.value);
-                      setShowPasswordError(false);
+                      setEmail(e.target.value);
+                      setShowAuthError(false);
                     }}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') handlePasswordSubmit();
-                    }}
-                    placeholder="Enter password"
+                    placeholder="Email"
                     className="w-full bg-white/20 text-white placeholder-white/50 px-4 py-3 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
                   />
-                  {showPasswordError && (
-                    <p className="text-red-300 text-sm mt-2">Incorrect password. Please try again.</p>
+                </div>
+                <div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setShowAuthError(false);
+                    }}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') handleLogin();
+                    }}
+                    placeholder="Password"
+                    className="w-full bg-white/20 text-white placeholder-white/50 px-4 py-3 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
+                  />
+                  {showAuthError && (
+                    <p className="text-red-300 text-sm mt-2">{authErrorMessage}</p>
                   )}
                 </div>
                 <button
                   type="button"
-                  onClick={handlePasswordSubmit}
+                  onClick={handleLogin}
                   className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-all"
                 >
-                  Unlock
+                  Sign In
                 </button>
               </div>
               <div className="mt-6 pt-6 border-t border-white/20">
                 <p className="text-white/60 text-sm text-center">
-                  You can still view data in read-only mode without unlocking.
+                  You can still view data in read-only mode without signing in.
                 </p>
                 <button
                   onClick={handleReadOnlyMode}
@@ -586,6 +627,7 @@
           </div>
         );
       }
+
 
       // Render: Main App
       return (
@@ -624,15 +666,13 @@
                   <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                     <Icon name="music" className="text-3xl" />
                     Band Activity Tracker
-                    {!isUnlocked && <span className="text-sm font-normal text-white/80">(Read-Only)</span>}
+                    {!user && <span className="text-sm font-normal text-white/80">(Read-Only)</span>}
                   </h1>
                   <div>
-                    {isUnlocked ? (
+                    {user ? (
                       <button
-                        onClick={() => {
-                          setIsUnlocked(false);
-                          setShowPasswordScreen(true);
-                        }}
+                        onClick={handleLogout}
+                    
                         className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-colors text-sm flex items-center gap-2"
                       >
                         <Icon name="lock" />
@@ -709,7 +749,7 @@
                           <Icon name="download" />
                           Export CSV
                         </button>
-                        {isUnlocked && (
+                        {user && (
                           <>
                             <label className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors cursor-pointer">
                               <Icon name="upload" />
@@ -761,7 +801,7 @@
                     {/* Spreadsheet View */}
                     {viewMode === 'spreadsheet' ? (
                       <div className="bg-white/10 backdrop-blur rounded-lg overflow-hidden">
-                        {selectedSongs.length > 0 && isUnlocked && (
+                        {selectedSongs.length > 0 && user && (
                           <div className="bg-red-500/20 border-b border-red-500/30 px-4 py-3 flex items-center justify-between">
                             <span className="text-white font-semibold">
                               {selectedSongs.length} song(s) selected
@@ -779,7 +819,7 @@
                           <table className="w-full min-w-[1200px]">
                             <thead className="bg-white/20">
                               <tr>
-                                {isUnlocked && (
+                                {user && (
                                   <th className="px-3 py-3 text-center w-12">
                                     <input
                                       type="checkbox"
@@ -797,7 +837,7 @@
                                 <th className="px-3 py-3 text-left text-white font-semibold text-sm w-24">Duration</th>
                                 <th className="px-3 py-3 text-left text-white font-semibold text-sm w-20">Key</th>
                                 <th className="px-3 py-3 text-left text-white font-semibold text-sm w-64">Notes</th>
-                                {isUnlocked && (
+                                {user && (
                                   <th className="px-3 py-3 text-center text-white font-semibold text-sm w-20">Actions</th>
                                 )}
                               </tr>
@@ -805,7 +845,7 @@
                             <tbody>
                               {getFilteredAndSortedSongs().map((song, index) => (
                                 <tr key={song.id} className={`border-b border-white/10 ${index % 2 === 0 ? 'bg-white/5' : ''} ${selectedSongs.includes(song.id) ? 'bg-blue-500/20' : ''}`}>
-                                  {isUnlocked && (
+                                  {user && (
                                     <td className="px-3 py-2 text-center">
                                       <input
                                         type="checkbox"
@@ -820,7 +860,7 @@
                                       type="text"
                                       value={song.title}
                                       onChange={(e) => updateSong(song.id, 'title', e.target.value)}
-                                      disabled={!isUnlocked}
+                                      disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
                                   </td>
@@ -829,7 +869,7 @@
                                       type="text"
                                       value={song.artist || ''}
                                       onChange={(e) => updateSong(song.id, 'artist', e.target.value)}
-                                      disabled={!isUnlocked}
+                                      disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
                                   </td>
@@ -838,7 +878,7 @@
                                       type="text"
                                       value={song.genre || ''}
                                       onChange={(e) => updateSong(song.id, 'genre', e.target.value)}
-                                      disabled={!isUnlocked}
+                                      disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
                                   </td>
@@ -847,7 +887,7 @@
                                       type="text"
                                       value={song.composers || ''}
                                       onChange={(e) => updateSong(song.id, 'composers', e.target.value)}
-                                      disabled={!isUnlocked}
+                                      disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
                                   </td>
@@ -856,7 +896,7 @@
                                       type="text"
                                       value={song.voicing || ''}
                                       onChange={(e) => updateSong(song.id, 'voicing', e.target.value)}
-                                      disabled={!isUnlocked}
+                                      disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
                                   </td>
@@ -865,7 +905,7 @@
                                       type="text"
                                       value={song.duration || ''}
                                       onChange={(e) => updateSong(song.id, 'duration', e.target.value)}
-                                      disabled={!isUnlocked}
+                                      disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
                                   </td>
@@ -874,7 +914,7 @@
                                       type="text"
                                       value={song.key || ''}
                                       onChange={(e) => updateSong(song.id, 'key', e.target.value)}
-                                      disabled={!isUnlocked}
+                                      disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
                                   </td>
@@ -883,11 +923,11 @@
                                       type="text"
                                       value={song.notes || ''}
                                       onChange={(e) => updateSong(song.id, 'notes', e.target.value)}
-                                      disabled={!isUnlocked}
+                                      disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
                                   </td>
-                                  {isUnlocked && (
+                                  {user && (
                                     <td className="px-3 py-2 text-center">
                                       <button
                                         onClick={() => deleteSong(song.id)}
@@ -902,7 +942,7 @@
                             </tbody>
                           </table>
                         </div>
-                        {getFilteredAndSortedSongs().length > 0 && isUnlocked && (
+                        {getFilteredAndSortedSongs().length > 0 && user && (
                           <div className="p-4 border-t border-white/20 flex justify-end">
                             <button
                               onClick={saveAllSongs}
@@ -992,7 +1032,7 @@
                                   <button
                                     onClick={() => saveSong(song.id)}
                                     className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"
-                                    disabled={!isUnlocked}
+                                    disabled={!user}
                                   >
                                     <Icon name="save" />
                                     Save
@@ -1000,7 +1040,7 @@
                                   <button
                                     onClick={() => deleteSong(song.id)}
                                     className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"
-                                    disabled={!isUnlocked}
+                                    disabled={!user}
                                   >
                                     <Icon name="trash" />
                                     Delete
@@ -1045,14 +1085,14 @@
                                   <button
                                     onClick={() => setEditingId(song.id)}
                                     className="text-blue-300 hover:text-blue-100"
-                                    disabled={!isUnlocked}
+                                    disabled={!user}
                                   >
                                     <Icon name="edit" />
                                   </button>
                                   <button
                                     onClick={() => deleteSong(song.id)}
                                     className="text-red-300 hover:text-red-100"
-                                    disabled={!isUnlocked}
+                                    disabled={!user}
                                   >
                                     <Icon name="trash" />
                                   </button>
@@ -1099,7 +1139,7 @@
                           <Icon name="download" />
                           Export CSV
                         </button>
-                        {isUnlocked && (
+                        {user && (
                           <label className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors cursor-pointer">
                             <Icon name="upload" />
                             Import Gigs CSV
@@ -1112,7 +1152,7 @@
                           </label>
                         )}
                         
-                        {isUnlocked && (
+                        {user && (
                           <button
                             onClick={addGig}
                             className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -1193,7 +1233,7 @@
                                 <button
                                   onClick={() => saveGig(gig.id)}
                                   className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"
-                                  disabled={!isUnlocked}
+                                  disabled={!user}
                                 >
                                   <Icon name="save" />
                                   Save
@@ -1201,7 +1241,7 @@
                                 <button
                                   onClick={() => deleteGig(gig.id)}
                                   className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2"
-                                  disabled={!isUnlocked}
+                                  disabled={!user}
                                 >
                                   <Icon name="trash" />
                                   Delete
@@ -1233,14 +1273,14 @@
                                   <button
                                     onClick={() => setEditingId(gig.id)}
                                     className="text-blue-300 hover:text-blue-100"
-                                    disabled={!isUnlocked}
+                                    disabled={!user}
                                   >
                                     <Icon name="edit" />
                                   </button>
                                   <button
                                     onClick={() => deleteGig(gig.id)}
                                     className="text-red-300 hover:text-red-100"
-                                    disabled={!isUnlocked}
+                                    disabled={!user}
                                   >
                                     <Icon name="trash" />
                                   </button>
@@ -1249,7 +1289,7 @@
 
                               {expandedGigs[gig.id] && (
                                 <div className="mt-4 border-t border-white/20 pt-4 ml-8">
-                                  {isUnlocked && (
+                                  {user && (
                                     <div className="relative mb-4">
                                       <h5 className="text-white/80 text-sm font-semibold mb-2">Add Song:</h5>
                                       <div className="relative">
@@ -1319,24 +1359,24 @@ No songs found matching "{searchQuery[gig.id]}"
                                         <div className="flex gap-1">
                                           <button
                                             onClick={() => moveSetlistSong(gig.id, songId, 'up')}
-                                            disabled={index === 0 || !isUnlocked}
-                                            className={`p-1 rounded ${index === 0 || !isUnlocked ? 'text-white/20' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
+                                            disabled={index === 0 || !user}
+                                            className={`p-1 rounded ${index === 0 || !user ? 'text-white/20' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
                                             title="Move up"
                                           >
                                             <Icon name="chevron-up" />
                                           </button>
                                           <button
                                             onClick={() => moveSetlistSong(gig.id, songId, 'down')}
-                                            disabled={index === gig.setlist.length - 1 || !isUnlocked}
-                                            className={`p-1 rounded ${index === gig.setlist.length - 1 || !isUnlocked ? 'text-white/20' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
+                                            disabled={index === gig.setlist.length - 1 || !user}
+                                            className={`p-1 rounded ${index === gig.setlist.length - 1 || !user ? 'text-white/20' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
                                             title="Move down"
                                           >
                                             <Icon name="chevron-down" />
                                           </button>
                                           <button
                                             onClick={() => removeFromSetlist(gig.id, songId)}
-                                            disabled={!isUnlocked}
-                                            className={`p-1 rounded ${!isUnlocked ? 'text-white/20' : 'text-red-300 hover:text-red-100 hover:bg-red-500/20'}`}
+                                            disabled={!user}
+                                            className={`p-1 rounded ${!user ? 'text-white/20' : 'text-red-300 hover:text-red-100 hover:bg-red-500/20'}`}
                                             title="Remove from setlist"
                                           >
                                             <Icon name="times" />
