@@ -19,7 +19,7 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
     const { createClient } = supabase;
 
     const SUPABASE_URL = 'https://yhchfhhdrfcotlvyoogz.supabase.co';
@@ -44,6 +44,50 @@
       const [repertoireSort, setRepertoireSort] = useState('title');
       const [gigsSearch, setGigsSearch] = useState('');
       const [gigsSort, setGigsSort] = useState('date');
+      const [showAddSongForm, setShowAddSongForm] = useState(false);
+      const [newSongForm, setNewSongForm] = useState({
+        title: '',
+        artist: '',
+        duration: '',
+        key: '',
+        genre: '',
+        composers: '',
+        voicing: '',
+        notes: ''
+      });
+      const [showNewSongSuggestions, setShowNewSongSuggestions] = useState({
+        genre: false,
+        composers: false
+      });
+      const [newSongSuggestionIndex, setNewSongSuggestionIndex] = useState({
+        genre: 0,
+        composers: 0
+      });
+      const [newSongSuggestionPosition, setNewSongSuggestionPosition] = useState({
+        genre: null,
+        composers: null
+      });
+      const newSongGenreRef = useRef(null);
+      const newSongComposersRef = useRef(null);
+      const [editSongSuggestions, setEditSongSuggestions] = useState({
+        songId: null,
+        field: null
+      });
+      const [editSongSuggestionIndex, setEditSongSuggestionIndex] = useState(0);
+      const [editSongSuggestionPosition, setEditSongSuggestionPosition] = useState({
+        top: 0,
+        left: 0,
+        width: 0
+      });
+      const editSongSuggestionInputRef = useRef(null);
+      const [showAddGigForm, setShowAddGigForm] = useState(false);
+      const [newGigForm, setNewGigForm] = useState({
+        name: '',
+        venue: '',
+        date: '',
+        time: '',
+        notes: ''
+      });
       const [user, setUser] = useState(null);
       const [email, setEmail] = useState('');
       const [password, setPassword] = useState('');
@@ -103,6 +147,180 @@
         };
         setSongs([newSong, ...songs]);
         setEditingId(newSong.id);
+      };
+
+      const updateNewSongForm = (field, value) => {
+        setNewSongForm(prev => ({ ...prev, [field]: value }));
+      };
+
+      const getSuggestionValues = (field) => {
+        const values = [];
+        songs.forEach(song => {
+          const rawValue = field === 'composers'
+            ? (song.composers || song.composer || '')
+            : song[field];
+          if (!rawValue) return;
+          const raw = Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue);
+          if (!raw.trim()) return;
+          raw
+            .split(/[,;/]/)
+            .map(value => value.trim())
+            .filter(Boolean)
+            .forEach(value => values.push(value));
+        });
+        return Array.from(new Set(values));
+      };
+
+      const getSuggestionsForField = (field, query) => {
+        if (!query.trim()) return [];
+        const lowerQuery = query.toLowerCase();
+        return getSuggestionValues(field)
+          .filter(value => value.toLowerCase().includes(lowerQuery))
+          .sort((a, b) => a.localeCompare(b))
+          .slice(0, 8);
+      };
+
+      const applySuggestionToNewSong = (field, value) => {
+        updateNewSongForm(field, value);
+        setShowNewSongSuggestions(prev => ({ ...prev, [field]: false }));
+      };
+
+      const updateNewSongSuggestionPosition = (field, inputEl) => {
+        if (!inputEl) return;
+        const rect = inputEl.getBoundingClientRect();
+        setNewSongSuggestionPosition(prev => ({
+          ...prev,
+          [field]: {
+            top: rect.bottom + window.scrollY + 6,
+            left: rect.left + window.scrollX,
+            width: rect.width
+          }
+        }));
+      };
+
+      const updateEditSongSuggestionPosition = (inputEl) => {
+        if (!inputEl) return;
+        const rect = inputEl.getBoundingClientRect();
+        setEditSongSuggestionPosition({
+          top: rect.bottom + window.scrollY + 6,
+          left: rect.left + window.scrollX,
+          width: rect.width
+        });
+      };
+
+      const openEditSongSuggestions = (songId, field, inputEl) => {
+        editSongSuggestionInputRef.current = inputEl;
+        updateEditSongSuggestionPosition(inputEl);
+        setEditSongSuggestions({ songId, field });
+        setEditSongSuggestionIndex(0);
+      };
+
+      const closeEditSongSuggestions = () => {
+        setEditSongSuggestions({ songId: null, field: null });
+      };
+
+      const applySuggestionToSong = (songId, field, value) => {
+        updateSong(songId, field, value);
+        closeEditSongSuggestions();
+      };
+
+      const handleNewSongSuggestionKeyDown = (field, e) => {
+        const suggestions = getSuggestionsForField(field, newSongForm[field] || '');
+        if (!suggestions.length) return;
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setNewSongSuggestionIndex(prev => ({
+            ...prev,
+            [field]: (prev[field] + 1) % suggestions.length
+          }));
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setNewSongSuggestionIndex(prev => ({
+            ...prev,
+            [field]: (prev[field] - 1 + suggestions.length) % suggestions.length
+          }));
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const value = suggestions[newSongSuggestionIndex[field]];
+          if (value) applySuggestionToNewSong(field, value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowNewSongSuggestions(prev => ({ ...prev, [field]: false }));
+        }
+      };
+
+      const handleEditSongSuggestionKeyDown = (songId, field, e) => {
+        const song = songs.find(s => s.id === songId);
+        if (!song) return;
+        const suggestions = getSuggestionsForField(field, song[field] || '');
+        if (!suggestions.length) return;
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setEditSongSuggestionIndex(prev => (prev + 1) % suggestions.length);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setEditSongSuggestionIndex(prev => (prev - 1 + suggestions.length) % suggestions.length);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const value = suggestions[editSongSuggestionIndex];
+          if (value) applySuggestionToSong(songId, field, value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeEditSongSuggestions();
+        }
+      };
+
+      useEffect(() => {
+        const handleReposition = () => {
+          if (showNewSongSuggestions.genre && newSongGenreRef.current) {
+            updateNewSongSuggestionPosition('genre', newSongGenreRef.current);
+          }
+          if (showNewSongSuggestions.composers && newSongComposersRef.current) {
+            updateNewSongSuggestionPosition('composers', newSongComposersRef.current);
+          }
+          if (editSongSuggestions.songId && editSongSuggestionInputRef.current) {
+            updateEditSongSuggestionPosition(editSongSuggestionInputRef.current);
+          }
+        };
+        window.addEventListener('scroll', handleReposition, true);
+        window.addEventListener('resize', handleReposition);
+        return () => {
+          window.removeEventListener('scroll', handleReposition, true);
+          window.removeEventListener('resize', handleReposition);
+        };
+      }, [showNewSongSuggestions.genre, showNewSongSuggestions.composers, editSongSuggestions.songId]);
+
+      const createSongFromForm = async () => {
+        if (!user || !newSongForm.title.trim()) return;
+        try {
+          const { data } = await supabaseClient.from('songs').insert([{
+            title: newSongForm.title.trim(),
+            artist: newSongForm.artist,
+            duration: newSongForm.duration,
+            key: newSongForm.key,
+            genre: newSongForm.genre,
+            composers: newSongForm.composers,
+            voicing: newSongForm.voicing,
+            notes: newSongForm.notes
+          }]).select();
+          if (data && data[0]) {
+            setSongs([data[0], ...songs]);
+            setNewSongForm({
+              title: '',
+              artist: '',
+              duration: '',
+              key: '',
+              genre: '',
+              composers: '',
+              voicing: '',
+              notes: ''
+            });
+            setShowAddSongForm(false);
+          }
+        } catch (error) {
+          console.error('Error creating song:', error);
+          alert('Error creating song. Please try again.');
+        }
       };
 
       const updateSong = (id, field, value) => {
@@ -303,8 +521,37 @@
           notes: '',
           editing: true
         };
+        setGigsSearch('');
+        setExpandedGigs(prev => ({ ...prev, [newGig.id]: true }));
         setGigs([newGig, ...gigs]);
         setEditingId(newGig.id);
+      };
+
+      const updateNewGigForm = (field, value) => {
+        setNewGigForm(prev => ({ ...prev, [field]: value }));
+      };
+
+      const createGigFromForm = async () => {
+        if (!user || !newGigForm.name.trim()) return;
+        try {
+          const { data } = await supabaseClient.from('gigs').insert([{
+            name: newGigForm.name.trim(),
+            venue: newGigForm.venue,
+            date: newGigForm.date || null,
+            time: newGigForm.time,
+            notes: newGigForm.notes
+          }]).select();
+          if (data && data[0]) {
+            const createdGig = { ...data[0], setlist: [] };
+            setGigs([createdGig, ...gigs]);
+            setExpandedGigs(prev => ({ ...prev, [createdGig.id]: true }));
+            setNewGigForm({ name: '', venue: '', date: '', time: '', notes: '' });
+            setShowAddGigForm(false);
+          }
+        } catch (error) {
+          console.error('Error creating gig:', error);
+          alert('Error creating gig. Please try again.');
+        }
       };
 
       const updateGig = (id, field, value) => {
@@ -823,11 +1070,11 @@
                               />
                             </label>
                             <button
-                              onClick={addSong}
+                              onClick={() => setShowAddSongForm(prev => !prev)}
                               className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
                             >
                               <Icon name="plus" />
-                              Add Song
+                              {showAddSongForm ? 'Close Add Song' : 'Add Song'}
                             </button>
                           </>
                         )}
@@ -858,6 +1105,208 @@
                         <option value="date">Sort by Date Added</option>
                       </select>
                     </div>
+
+                    {user && showAddSongForm && (
+                      <div className="mb-6 bg-white/10 backdrop-blur rounded-lg p-4 relative z-30 overflow-visible">
+                        <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                          <Icon name="plus" />
+                          Add Song
+                        </h3>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            placeholder="Song Title"
+                            value={newSongForm.title}
+                            onChange={(e) => updateNewSongForm('title', e.target.value)}
+                            className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Artist/Original"
+                            value={newSongForm.artist}
+                            onChange={(e) => updateNewSongForm('artist', e.target.value)}
+                            className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mt-3">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="Genre"
+                              value={newSongForm.genre}
+                              onChange={(e) => {
+                                updateNewSongForm('genre', e.target.value);
+                                setShowNewSongSuggestions(prev => ({ ...prev, genre: true }));
+                                updateNewSongSuggestionPosition('genre', e.currentTarget);
+                                setNewSongSuggestionIndex(prev => ({ ...prev, genre: 0 }));
+                              }}
+                              onFocus={(e) => {
+                                setShowNewSongSuggestions(prev => ({ ...prev, genre: true }));
+                                updateNewSongSuggestionPosition('genre', e.currentTarget);
+                                setNewSongSuggestionIndex(prev => ({ ...prev, genre: 0 }));
+                              }}
+                              onBlur={() => setTimeout(() => setShowNewSongSuggestions(prev => ({ ...prev, genre: false })), 200)}
+                              onKeyDown={(e) => handleNewSongSuggestionKeyDown('genre', e)}
+                              ref={newSongGenreRef}
+                              className="w-full bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                            />
+                            {showNewSongSuggestions.genre && newSongForm.genre.trim() && newSongSuggestionPosition.genre && ReactDOM.createPortal(
+                              <div
+                                className="absolute bg-gray-800 rounded-lg shadow-xl max-h-48 overflow-y-auto z-[9999] border border-white/20"
+                                style={{
+                                  top: `${newSongSuggestionPosition.genre.top}px`,
+                                  left: `${newSongSuggestionPosition.genre.left}px`,
+                                  width: `${newSongSuggestionPosition.genre.width}px`
+                                }}
+                              >
+                                {getSuggestionsForField('genre', newSongForm.genre).length > 0 ? (
+                                  getSuggestionsForField('genre', newSongForm.genre).map((value, idx) => (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      onMouseDown={() => applySuggestionToNewSong('genre', value)}
+                                      className={`w-full text-left px-3 py-2 transition-colors border-b border-white/10 last:border-b-0 ${idx === newSongSuggestionIndex.genre ? 'bg-white/10' : 'hover:bg-white/10'}`}
+                                    >
+                                      <div className="text-white">{value}</div>
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="px-3 py-2 text-white/50 text-sm">
+                                    No matches
+                                  </div>
+                                )}
+                              </div>,
+                              document.body
+                            )}
+                          </div>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              placeholder="Composers"
+                              value={newSongForm.composers}
+                              onChange={(e) => {
+                                updateNewSongForm('composers', e.target.value);
+                                setShowNewSongSuggestions(prev => ({ ...prev, composers: true }));
+                                updateNewSongSuggestionPosition('composers', e.currentTarget);
+                                setNewSongSuggestionIndex(prev => ({ ...prev, composers: 0 }));
+                              }}
+                              onFocus={(e) => {
+                                setShowNewSongSuggestions(prev => ({ ...prev, composers: true }));
+                                updateNewSongSuggestionPosition('composers', e.currentTarget);
+                                setNewSongSuggestionIndex(prev => ({ ...prev, composers: 0 }));
+                              }}
+                              onBlur={() => setTimeout(() => setShowNewSongSuggestions(prev => ({ ...prev, composers: false })), 200)}
+                              onKeyDown={(e) => handleNewSongSuggestionKeyDown('composers', e)}
+                              ref={newSongComposersRef}
+                              className="w-full bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                            />
+                            {showNewSongSuggestions.composers && newSongForm.composers.trim() && newSongSuggestionPosition.composers && ReactDOM.createPortal(
+                              <div
+                                className="absolute bg-gray-800 rounded-lg shadow-xl max-h-48 overflow-y-auto z-[9999] border border-white/20"
+                                style={{
+                                  top: `${newSongSuggestionPosition.composers.top}px`,
+                                  left: `${newSongSuggestionPosition.composers.left}px`,
+                                  width: `${newSongSuggestionPosition.composers.width}px`
+                                }}
+                              >
+                                {getSuggestionsForField('composers', newSongForm.composers).length > 0 ? (
+                                  getSuggestionsForField('composers', newSongForm.composers).map((value, idx) => (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      onMouseDown={() => applySuggestionToNewSong('composers', value)}
+                                      className={`w-full text-left px-3 py-2 transition-colors border-b border-white/10 last:border-b-0 ${idx === newSongSuggestionIndex.composers ? 'bg-white/10' : 'hover:bg-white/10'}`}
+                                    >
+                                      <div className="text-white">{value}</div>
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="px-3 py-2 text-white/50 text-sm">
+                                    No matches
+                                  </div>
+                                )}
+                              </div>,
+                              document.body
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 mt-3">
+                          <input
+                            type="text"
+                            placeholder="Voicing"
+                            value={newSongForm.voicing}
+                            onChange={(e) => updateNewSongForm('voicing', e.target.value)}
+                            className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Duration (3:45)"
+                            value={newSongForm.duration}
+                            onChange={(e) => updateNewSongForm('duration', e.target.value)}
+                            className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Key (Am)"
+                            value={newSongForm.key}
+                            onChange={(e) => updateNewSongForm('key', e.target.value)}
+                            className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                        </div>
+                        <textarea
+                          placeholder="Notes"
+                          value={newSongForm.notes}
+                          onChange={(e) => updateNewSongForm('notes', e.target.value)}
+                          className="w-full bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60 resize-none mt-3"
+                          rows="2"
+                        />
+                        <div className="flex justify-end mt-3">
+                          <button
+                            onClick={createSongFromForm}
+                            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                          >
+                            <Icon name="save" />
+                            Create Song
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {editSongSuggestions.songId && editSongSuggestions.field && (() => {
+                      const song = songs.find(s => s.id === editSongSuggestions.songId);
+                      if (!song) return null;
+                      const currentValue = song[editSongSuggestions.field] || '';
+                      const suggestions = getSuggestionsForField(editSongSuggestions.field, currentValue);
+                      if (!currentValue.trim()) return null;
+                      return ReactDOM.createPortal(
+                        <div
+                          className="absolute bg-gray-800 rounded-lg shadow-xl max-h-48 overflow-y-auto z-[9999] border border-white/20"
+                          style={{
+                            top: `${editSongSuggestionPosition.top}px`,
+                            left: `${editSongSuggestionPosition.left}px`,
+                            width: `${editSongSuggestionPosition.width}px`
+                          }}
+                        >
+                          {suggestions.length > 0 ? (
+                            suggestions.map((value, idx) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onMouseDown={() => applySuggestionToSong(editSongSuggestions.songId, editSongSuggestions.field, value)}
+                                className={`w-full text-left px-3 py-2 transition-colors border-b border-white/10 last:border-b-0 ${idx === editSongSuggestionIndex ? 'bg-white/10' : 'hover:bg-white/10'}`}
+                              >
+                                <div className="text-white">{value}</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-white/50 text-sm">
+                              No matches
+                            </div>
+                          )}
+                        </div>,
+                        document.body
+                      );
+                    })()}
 
                     {/* Spreadsheet View */}
                     {viewMode === 'spreadsheet' ? (
@@ -938,7 +1387,13 @@
                                     <input
                                       type="text"
                                       value={song.genre || ''}
-                                      onChange={(e) => updateSong(song.id, 'genre', e.target.value)}
+                                      onChange={(e) => {
+                                        updateSong(song.id, 'genre', e.target.value);
+                                        openEditSongSuggestions(song.id, 'genre', e.currentTarget);
+                                      }}
+                                      onFocus={(e) => openEditSongSuggestions(song.id, 'genre', e.currentTarget)}
+                                      onBlur={() => setTimeout(closeEditSongSuggestions, 200)}
+                                      onKeyDown={(e) => handleEditSongSuggestionKeyDown(song.id, 'genre', e)}
                                       disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
@@ -947,7 +1402,13 @@
                                     <input
                                       type="text"
                                       value={song.composers || ''}
-                                      onChange={(e) => updateSong(song.id, 'composers', e.target.value)}
+                                      onChange={(e) => {
+                                        updateSong(song.id, 'composers', e.target.value);
+                                        openEditSongSuggestions(song.id, 'composers', e.currentTarget);
+                                      }}
+                                      onFocus={(e) => openEditSongSuggestions(song.id, 'composers', e.currentTarget)}
+                                      onBlur={() => setTimeout(closeEditSongSuggestions, 200)}
+                                      onKeyDown={(e) => handleEditSongSuggestionKeyDown(song.id, 'composers', e)}
                                       disabled={!user}
                                       className="w-full bg-white/10 text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-white/60 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                     />
@@ -1048,14 +1509,26 @@
                                     type="text"
                                     placeholder="Genre"
                                     value={song.genre || ''}
-                                    onChange={(e) => updateSong(song.id, 'genre', e.target.value)}
+                                    onChange={(e) => {
+                                      updateSong(song.id, 'genre', e.target.value);
+                                      openEditSongSuggestions(song.id, 'genre', e.currentTarget);
+                                    }}
+                                    onFocus={(e) => openEditSongSuggestions(song.id, 'genre', e.currentTarget)}
+                                    onBlur={() => setTimeout(closeEditSongSuggestions, 200)}
+                                    onKeyDown={(e) => handleEditSongSuggestionKeyDown(song.id, 'genre', e)}
                                     className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
                                   />
                                   <input
                                     type="text"
                                     placeholder="Composers"
                                     value={song.composers || ''}
-                                    onChange={(e) => updateSong(song.id, 'composers', e.target.value)}
+                                    onChange={(e) => {
+                                      updateSong(song.id, 'composers', e.target.value);
+                                      openEditSongSuggestions(song.id, 'composers', e.currentTarget);
+                                    }}
+                                    onFocus={(e) => openEditSongSuggestions(song.id, 'composers', e.currentTarget)}
+                                    onBlur={() => setTimeout(closeEditSongSuggestions, 200)}
+                                    onKeyDown={(e) => handleEditSongSuggestionKeyDown(song.id, 'composers', e)}
                                     className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
                                   />
                                 </div>
@@ -1215,11 +1688,11 @@
                         
                         {user && (
                           <button
-                            onClick={addGig}
+                            onClick={() => setShowAddGigForm(prev => !prev)}
                             className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
                           >
                             <Icon name="plus" />
-                            Add Gig
+                            {showAddGigForm ? 'Close Add Gig' : 'Add Gig'}
                           </button>
                         )}
                       </div>
@@ -1248,9 +1721,67 @@
                       </select>
                     </div>
 
+                    {user && showAddGigForm && (
+                      <div className="mb-6 bg-white/10 backdrop-blur rounded-lg p-4">
+                        <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                          <Icon name="plus" />
+                          Add Gig
+                        </h3>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            placeholder="Gig Name"
+                            value={newGigForm.name}
+                            onChange={(e) => updateNewGigForm('name', e.target.value)}
+                            className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Venue"
+                            value={newGigForm.venue}
+                            onChange={(e) => updateNewGigForm('venue', e.target.value)}
+                            className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mt-3">
+                          <input
+                            type="date"
+                            value={newGigForm.date}
+                            onChange={(e) => updateNewGigForm('date', e.target.value)}
+                            className="bg-white/20 text-white px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                          <input
+                            type="time"
+                            value={newGigForm.time}
+                            onChange={(e) => updateNewGigForm('time', e.target.value)}
+                            className="bg-white/20 text-white px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                          />
+                        </div>
+                        <textarea
+                          placeholder="Notes"
+                          value={newGigForm.notes}
+                          onChange={(e) => updateNewGigForm('notes', e.target.value)}
+                          className="w-full bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60 resize-none mt-3"
+                          rows="2"
+                        />
+                        <div className="flex justify-end mt-3">
+                          <button
+                            onClick={createGigFromForm}
+                            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                          >
+                            <Icon name="save" />
+                            Create Gig
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-4">
                       {getFilteredAndSortedGigs().map(gig => (
-                        <div key={gig.id} className="bg-white/10 backdrop-blur rounded-lg p-4">
+                        <div
+                          key={gig.id}
+                          className={`bg-white/10 backdrop-blur rounded-lg p-4 relative ${showSuggestions[gig.id] ? 'z-40' : 'z-0'}`}
+                        >
                           {gig.editing || editingId === gig.id ? (
                             <div className="space-y-3">
                               <div className="grid grid-cols-2 gap-3">
@@ -1351,7 +1882,7 @@
                               {expandedGigs[gig.id] && (
                                 <div className="mt-4 border-t border-white/20 pt-4 ml-8">
                                   {user && (
-                                    <div className="relative mb-4">
+                                    <div className="relative mb-4 z-30">
                                       <h5 className="text-white/80 text-sm font-semibold mb-2">Add Song:</h5>
                                       <div className="relative">
                                         <input
@@ -1367,7 +1898,7 @@
 className="w-full bg-white/10 text-white placeholder-white/50 px-4 py-2 rounded-lg border border-white/30 focus:outline-none focus:border-white/60"
 />
 {showSuggestions[gig.id] && searchQuery[gig.id]?.trim() && (
-<div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50 border border-white/20">
+<div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg shadow-xl max-h-60 overflow-y-auto z-[9999] border border-white/20">
 {getFilteredSongs(gig.id).length > 0 ? (
 getFilteredSongs(gig.id).map(song => (
 <button
