@@ -50,6 +50,8 @@
       const [showAuthError, setShowAuthError] = useState(false);
       const [authErrorMessage, setAuthErrorMessage] = useState('');
       const [showPasswordScreen, setShowPasswordScreen] = useState(true);
+      const [draggingSetlist, setDraggingSetlist] = useState(null);
+      const [dragOverSetlistIndex, setDragOverSetlistIndex] = useState(null);
 
       useEffect(() => {
         checkUser();
@@ -378,6 +380,19 @@
         );
       };
 
+      const persistSetlistOrder = async (gigId, setlist) => {
+        if (String(gigId).startsWith('temp-')) return;
+        await supabaseClient.from('setlist_items').delete().eq('gig_id', gigId);
+        const items = setlist.map((song_id, pos) => ({
+          gig_id: gigId,
+          song_id,
+          position: pos
+        }));
+        if (items.length > 0) {
+          await supabaseClient.from('setlist_items').insert(items);
+        }
+      };
+
       const moveSetlistSong = async (gigId, songId, direction) => {
         const gig = gigs.find(g => g.id === gigId);
         if (!gig || String(gigId).startsWith('temp-')) return;
@@ -390,35 +405,81 @@
         if (newIndex < 0 || newIndex >= setlist.length) return;
 
         [setlist[index], setlist[newIndex]] = [setlist[newIndex], setlist[index]];
-
-        await supabaseClient.from('setlist_items').delete().eq('gig_id', gigId);
-        const items = setlist.map((song_id, pos) => ({
-          gig_id: gigId,
-          song_id,
-          position: pos
-        }));
-        await supabaseClient.from('setlist_items').insert(items);
-
+        await persistSetlistOrder(gigId, setlist);
         setGigs(gigs.map(g => g.id === gigId ? { ...g, setlist } : g));
+      };
+
+      const handleSetlistDragStart = (e, gigId, songId) => {
+        if (!user) return;
+        if (e?.dataTransfer) {
+          e.dataTransfer.setData('text/plain', String(songId));
+          e.dataTransfer.effectAllowed = 'move';
+        }
+        setDraggingSetlist({ gigId, songId });
+      };
+
+      const handleSetlistDragOver = (e, gigId, index) => {
+        if (!user) return;
+        if (!draggingSetlist || draggingSetlist.gigId !== gigId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e?.dataTransfer) {
+          e.dataTransfer.dropEffect = 'move';
+        }
+        setDragOverSetlistIndex(index);
+      };
+
+      const handleSetlistDrop = async (e, gigId, dropIndex) => {
+        if (!user) return;
+        if (!draggingSetlist || draggingSetlist.gigId !== gigId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const gig = gigs.find(g => g.id === gigId);
+        if (!gig) return;
+        const originalSetlist = [...gig.setlist];
+        const fromIndex = originalSetlist.indexOf(draggingSetlist.songId);
+        const setlist = originalSetlist.filter(id => id !== draggingSetlist.songId);
+        if (dropIndex == null) {
+          setDragOverSetlistIndex(null);
+          setDraggingSetlist(null);
+          return;
+        }
+        const adjustedIndex = fromIndex !== -1 && fromIndex < dropIndex ? dropIndex - 1 : dropIndex;
+        const targetIndex = Math.min(Math.max(adjustedIndex, 0), setlist.length);
+        const moved = draggingSetlist.songId;
+        setlist.splice(targetIndex, 0, moved);
+        await persistSetlistOrder(gigId, setlist);
+        setGigs(gigs.map(g => g.id === gigId ? { ...g, setlist } : g));
+        setDragOverSetlistIndex(null);
+        setDraggingSetlist(null);
+      };
+
+      const handleSetlistDropOnContainer = async (e, gigId) => {
+        if (!user) return;
+        if (!draggingSetlist || draggingSetlist.gigId !== gigId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const gig = gigs.find(g => g.id === gigId);
+        if (!gig) return;
+        const setlist = [...gig.setlist].filter(id => id !== draggingSetlist.songId);
+        setlist.push(draggingSetlist.songId);
+        await persistSetlistOrder(gigId, setlist);
+        setGigs(gigs.map(g => g.id === gigId ? { ...g, setlist } : g));
+        setDragOverSetlistIndex(null);
+        setDraggingSetlist(null);
+      };
+
+      const handleSetlistDragEnd = () => {
+        setDragOverSetlistIndex(null);
+        setDraggingSetlist(null);
       };
 
       const removeFromSetlist = async (gigId, songId) => {
         const gig = gigs.find(g => g.id === gigId);
         if (!gig || String(gigId).startsWith('temp-')) return;
 
-        await supabaseClient.from('setlist_items').delete().eq('gig_id', gigId).eq('song_id', songId);
-        
         const newSetlist = gig.setlist.filter(id => id !== songId);
-        const items = newSetlist.map((song_id, pos) => ({
-          gig_id: gigId,
-          song_id,
-          position: pos
-        }));
-        
-        if (items.length > 0) {
-          await supabaseClient.from('setlist_items').delete().eq('gig_id', gigId);
-          await supabaseClient.from('setlist_items').insert(items);
-        }
+        await persistSetlistOrder(gigId, newSetlist);
 
         setGigs(gigs.map(g => g.id === gigId ? { ...g, setlist: newSetlist } : g));
       };
@@ -1341,12 +1402,40 @@ No songs found matching "{searchQuery[gig.id]}"
                               </h4>
 
                               {gig.setlist.length > 0 ? (
-                                <div className="space-y-2">
+                                <div
+                                  className="space-y-2"
+                                  onDragOver={(e) => {
+                                    if (user && draggingSetlist?.gigId === gig.id) {
+                                      e.preventDefault();
+                                      if (e?.dataTransfer) {
+                                        e.dataTransfer.dropEffect = 'move';
+                                      }
+                                      setDragOverSetlistIndex(gig.setlist.length);
+                                    }
+                                  }}
+                                  onDrop={(e) => handleSetlistDropOnContainer(e, gig.id)}
+                                >
                                   {gig.setlist.map((songId, index) => {
                                     const song = songs.find(s => s.id === songId);
                                     if (!song) return null;
                                     return (
-                                      <div key={songId} className="bg-white/10 hover:bg-white/15 p-3 rounded transition-colors flex items-center gap-3">
+                                      <div
+                                        key={songId}
+                                        onDragOver={(e) => handleSetlistDragOver(e, gig.id, index)}
+                                        onDrop={(e) => handleSetlistDrop(e, gig.id, index)}
+                                      >
+                                        {dragOverSetlistIndex === index && (
+                                          <div className="my-2 h-0.5 bg-blue-400/80 rounded" />
+                                        )}
+                                        <div
+                                          draggable={!!user}
+                                          onDragStart={(e) => handleSetlistDragStart(e, gig.id, songId)}
+                                          onDragEnd={handleSetlistDragEnd}
+                                          className={`bg-white/10 hover:bg-white/15 p-3 rounded transition-colors flex items-center gap-3 ${draggingSetlist?.songId === songId ? 'opacity-60' : ''}`}
+                                        >
+                                          <span className={`text-white/40 ${user ? 'cursor-grab' : ''}`} title="Drag to reorder">
+                                            <Icon name="grip-vertical" />
+                                          </span>
                                         <span className="text-white/60 font-bold text-sm w-8">{index + 1}.</span>
                                         <div className="flex-1">
                                           <div className="text-white font-semibold">{song.title}</div>
@@ -1383,8 +1472,12 @@ No songs found matching "{searchQuery[gig.id]}"
                                           </button>
                                         </div>
                                       </div>
+                                      </div>
                                     );
                                   })}
+                                  {dragOverSetlistIndex === gig.setlist.length && (
+                                    <div className="h-0.5 bg-blue-400/70 rounded" />
+                                  )}
                                 </div>
                               ) : (
                                 <p className="text-white/50 text-sm">No songs in setlist yet. Use the search above to add songs.</p>
