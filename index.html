@@ -96,11 +96,26 @@
       const [showPasswordScreen, setShowPasswordScreen] = useState(true);
       const [draggingSetlist, setDraggingSetlist] = useState(null);
       const [dragOverSetlistIndex, setDragOverSetlistIndex] = useState(null);
+      const [deepLinkGigId] = useState(() => new URLSearchParams(window.location.search).get('setlist'));
+      const [copiedGigId, setCopiedGigId] = useState(null);
+      const deepLinkApplied = useRef(false);
 
       useEffect(() => {
         checkUser();
         loadData();
       }, []);
+
+      useEffect(() => {
+        if (!showPasswordScreen && !loading && deepLinkGigId && !deepLinkApplied.current) {
+          deepLinkApplied.current = true;
+          setActiveTab('gigs');
+          setExpandedGigs(prev => ({ ...prev, [deepLinkGigId]: true }));
+          setTimeout(() => {
+            const el = document.getElementById(`gig-${deepLinkGigId}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 100);
+        }
+      }, [showPasswordScreen, loading]);
 
       const checkUser = async () => {
         const { data: { session } } = await supabaseClient.auth.getSession();
@@ -742,6 +757,14 @@
       };
 
       const collapseAllGigs = () => setExpandedGigs({});
+
+      const copySetlistLink = (gigId) => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('setlist', gigId);
+        navigator.clipboard.writeText(url.toString());
+        setCopiedGigId(gigId);
+        setTimeout(() => setCopiedGigId(null), 2000);
+      };
 
       const exportRepertoireToCSV = () => {
         const csv = Papa.unparse(songs.map(song => ({
@@ -1779,6 +1802,7 @@
                     <div className="space-y-4">
                       {getFilteredAndSortedGigs().map(gig => (
                         <div
+                          id={`gig-${gig.id}`}
                           key={gig.id}
                           className={`bg-white/10 backdrop-blur rounded-lg p-4 relative ${showSuggestions[gig.id] ? 'z-40' : 'z-0'}`}
                         >
@@ -1861,7 +1885,14 @@
                                   </div>
                                   {gig.notes && <p className="text-white/60 mt-2 text-sm ml-8">{gig.notes}</p>}
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 items-center">
+                                  <button
+                                    onClick={() => copySetlistLink(gig.id)}
+                                    className={`transition-colors ${copiedGigId === gig.id ? 'text-green-300' : 'text-white/50 hover:text-white/90'}`}
+                                    title="Copy link to this setlist"
+                                  >
+                                    <Icon name={copiedGigId === gig.id ? 'check' : 'link'} />
+                                  </button>
                                   <button
                                     onClick={() => setEditingId(gig.id)}
                                     className="text-blue-300 hover:text-blue-100"
