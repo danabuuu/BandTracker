@@ -191,7 +191,7 @@
         );
       }
 
-      const { analysis, title, artist, bpm: sessionBpm, returnTo, gigId: returnGigId } = session;
+      const { analysis, title, artist, bpm: sessionBpm, beatsInScroll: sessionBeatsInScroll, returnTo, gigId: returnGigId } = session;
       const { staves, pageCount } = analysis;
 
       const [selection, setSelection]         = useState([]);
@@ -202,10 +202,13 @@
       const [scrollPreviewUrl, setScrollPreviewUrl] = useState(null);
       const [savedParts, setSavedParts]       = useState([]);
       const [hiddenAutoStaves, setHiddenAutoStaves] = useState(() => new Set());
+      const [nudgingKey, setNudgingKey]         = useState(null);
 
       const [partLabel, setPartLabel]           = useState('');
       const [tempo, setTempo]                   = useState(sessionBpm ? String(sessionBpm) : '');
-      const [measures, setMeasures]             = useState('');
+      const [measures, setMeasures]             = useState(
+        sessionBeatsInScroll ? String(Math.round(sessionBeatsInScroll / 4)) : ''
+      );
       const [beatsPerMeasure, setBeatsPerMeasure] = useState('4');
       const [rows, setRows]                     = useState(1);
       const [padAbove, setPadAbove]             = useState(DEFAULT_PAD_ABOVE);
@@ -245,7 +248,7 @@
       }
 
       function nudgeSelection(key, dir) {
-        const NUDGE_PX = 5;
+        const NUDGE_PX = 1;
         setSelection(prev => prev.map(e => {
           if (e.key !== key) return e;
           const d = dir * NUDGE_PX;
@@ -535,18 +538,27 @@
               )}
               {selection.map((entry, pos) => (
                 <div key={entry.key}
-                  className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${entry.manual ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                  onClick={() => setNudgingKey(k => k === entry.key ? null : entry.key)}
+                  className={`flex items-center gap-1 rounded border px-2 py-1 text-xs cursor-pointer ${
+                    nudgingKey === entry.key
+                      ? 'border-indigo-400 bg-indigo-50'
+                      : entry.manual ? 'border-green-200 bg-green-50 hover:bg-green-100' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                  }`}>
                   <span className={`w-4 text-center font-mono font-bold shrink-0 ${entry.manual ? 'text-green-700' : 'text-indigo-600'}`}>
                     {pos + 1}
                   </span>
                   <span className="flex-1 text-gray-600 truncate">
                     p{entry.stave.pageIndex + 1}{entry.manual ? ' ✦' : ''}
                   </span>
-                  <button onClick={() => nudgeSelection(entry.key, -1)}
-                    className="text-gray-300 hover:text-indigo-500 leading-none" title="Nudge up">↑</button>
-                  <button onClick={() => nudgeSelection(entry.key, +1)}
-                    className="text-gray-300 hover:text-indigo-500 leading-none" title="Nudge down">↓</button>
-                  <button onClick={() => removeFromSelection(entry.key)}
+                  {nudgingKey === entry.key && (
+                    <>
+                      <button onClick={e => { e.stopPropagation(); nudgeSelection(entry.key, -1); }}
+                        className="text-indigo-500 hover:text-indigo-700 leading-none" title="Nudge crop up">↑</button>
+                      <button onClick={e => { e.stopPropagation(); nudgeSelection(entry.key, +1); }}
+                        className="text-indigo-500 hover:text-indigo-700 leading-none" title="Nudge crop down">↓</button>
+                    </>
+                  )}
+                  <button onClick={e => { e.stopPropagation(); removeFromSelection(entry.key); }}
                     className="text-gray-300 hover:text-red-500 font-bold leading-none">×</button>
                 </div>
               ))}
