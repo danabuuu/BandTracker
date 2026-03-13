@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Select Staves — Band Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useRef, useEffect, useCallback } = React;
+
+    const SCROLL_API_URL = 'https://er-shettmusicscroll-api.vercel.app';
+    const DEFAULT_PAD_ABOVE = 0.10;
+    const DEFAULT_PAD_BELOW = 0.90;
+
+    function byPageThenTop(a, b) {
+      if (a.stave.pageIndex !== b.stave.pageIndex) return a.stave.pageIndex - b.stave.pageIndex;
+      return a.stave.lineTop - b.stave.lineTop;
+    }
+
+    // ─── PageView ─────────────────────────────────────────────────────────────
+
+    function PageView({ jobId, pageIndex, staveIndices, staves, selectionPos, manualEntries,
+                        detecting, onToggle, onRemoveManual, onPageClick }) {
+      const containerRef = useRef(null);
+      const [dims, setDims] = useState(null);
+      const [renderW, setRenderW] = useState(0);
+
+      useEffect(() => {
+        if (!containerRef.current) return;
+        const ro = new ResizeObserver(([entry]) => setRenderW(entry.contentRect.width));
+        ro.observe(containerRef.current);
+        return () => ro.disconnect();
+      }, []);
+
+      const scale = dims ? renderW / dims.w : 1;
+
+      function handleSvgClick(e) {
+        if (!dims) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const naturalY = Math.round((e.clientY - rect.top) / scale);
+        onPageClick(pageIndex, naturalY, dims.h);
+      }
+
+      return (
+        <div className="w-full max-w-4xl bg-white rounded-xl shadow overflow-hidden">
+          <p className="px-4 py-2 text-xs text-gray-400 border-b border-gray-100">
+            Page {pageIndex + 1}
+            {detecting && <span className="ml-2 text-amber-500 animate-pulse">detecting…</span>}
+          </p>
+          <div ref={containerRef} className="relative w-full">
+            <img
+              src={`${SCROLL_API_URL}/api/pages/${jobId}/${pageIndex}`}
+              alt={`Page ${pageIndex + 1}`}
+              className="w-full block"
+              onLoad={e => {
+                const img = e.currentTarget;
+                setDims({ w: img.naturalWidth, h: img.naturalHeight });
+                setRenderW(img.clientWidth);
+              }}
+            />
+            {dims && renderW > 0 && (
+              <svg
+                className="absolute inset-0 cursor-crosshair"
+                width={renderW}
+                height={dims.h * scale}
+                viewBox={`0 0 ${renderW} ${dims.h * scale}`}
+                style={{ position: 'absolute', top: 0, left: 0 }}
+                onClick={handleSvgClick}
+              >
+                {/* Auto-detected staves */}
+                {staveIndices.map(idx => {
+                  const stave = staves[idx];
+                  const key = `auto-${idx}`;
+                  const top    = stave.top    * scale;
+                  const bottom = stave.bottom * scale;
+                  const pos    = selectionPos.get(key);
+                  const selected = pos !== undefined;
+                  return (
+                    <g key={key} onClick={e => { e.stopPropagation(); onToggle(idx); }}>
+                      <rect
+                        x={0} y={top} width={renderW} height={bottom - top}
+                        fill={selected ? 'rgba(99,102,241,0.18)' : 'rgba(156,163,175,0.12)'}
+                        stroke={selected ? '#6366f1' : '#9ca3af'}
+                        strokeWidth={selected ? 2 : 1}
+                        rx={3}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      {selected && (
+                        <text x={8} y={top + 16} fill="#6366f1" fontWeight="bold" fontSize={14}>
+                          {pos}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+                {/* Manual entries */}
+                {manualEntries.map(entry => {
+                  const { stave } = entry;
+                  const top    = stave.top    * scale;
+                  const bottom = stave.bottom * scale;
+                  const pos    = selectionPos.get(entry.key);
+                  return (
+                    <g key={entry.key} onClick={e => { e.stopPropagation(); onRemoveManual(entry.key); }}>
+                      <rect
+                        x={0} y={top} width={renderW} height={bottom - top}
+                        fill="rgba(34,197,94,0.15)"
+                        stroke="#22c55e"
+                        strokeWidth={1.5}
+                        strokeDasharray="6 3"
+                        rx={3}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      {pos !== undefined && (
+                        <text x={8} y={top + 16} fill="#16a34a" fontWeight="bold" fontSize={14}>
+                          {pos}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+              </svg>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── SelectPage ───────────────────────────────────────────────────────────
+
+    function SelectPage() {
+      const params = new URLSearchParams(window.location.search);
+      const jobId = params.get('job');
+      const sessionKey = jobId ? `scroll-job-${jobId}` : null;
+
+      let session = null;
+      try { session = sessionKey ? JSON.parse(sessionStorage.getItem(sessionKey) || 'null') : null; }
+      catch { /* ignore */ }
+
+      if (!jobId || !session) {
+        return (
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="bg-white rounded-2xl shadow p-10 text-center max-w-sm">
+              <p className="text-gray-600 mb-2 font-medium">Session not found</p>
+              <p className="text-gray-400 text-sm mb-6">
+                This happens if you refreshed the page or opened this link in a new tab.
+              </p>
+              <a href="upload.html" className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
+                ← Upload a new PDF
+              </a>
+            </div>
+          </div>
+        );
+      }
+
+      const { analysis, title, artist, bpm: sessionBpm } = session;
+      const { staves, pageCount } = analysis;
+
+      const [selection, setSelection]         = useState([]);
+      const [detectingPage, setDetectingPage] = useState(null);
+      const [detectError, setDetectError]     = useState(null);
+      const [building, setBuilding]           = useState(false);
+      const [buildError, setBuildError]       = useState('');
+      const [scrollPreviewUrl, setScrollPreviewUrl] = useState(null);
+      const [savedParts, setSavedParts]       = useState([]);
+
+      const [partLabel, setPartLabel]           = useState('');
+      const [tempo, setTempo]                   = useState(sessionBpm ? String(sessionBpm) : '');
+      const [measures, setMeasures]             = useState('');
+      const [beatsPerMeasure, setBeatsPerMeasure] = useState('4');
+      const [rows, setRows]                     = useState(1);
+      const [padAbove, setPadAbove]             = useState(DEFAULT_PAD_ABOVE);
+      const [padBelow, setPadBelow]             = useState(DEFAULT_PAD_BELOW);
+      const [songId, setSongId]                 = useState(session.songId || null);
+
+      const selectionPos = new Map(selection.map((e, i) => [e.key, i + 1]));
+
+      function addEntry(entry) {
+        setSelection(prev => {
+          const overlaps = prev.some(e =>
+            e.stave.pageIndex === entry.stave.pageIndex &&
+            e.stave.lineTop < entry.stave.lineBottom &&
+            entry.stave.lineTop < e.stave.lineBottom
+          );
+          if (overlaps) return prev;
+          return [...prev, entry].sort(byPageThenTop);
+        });
+      }
+
+      function toggleAutoStave(idx) {
+        const key = `auto-${idx}`;
+        if (selectionPos.has(key)) {
+          setSelection(prev => prev.filter(e => e.key !== key));
+        } else {
+          addEntry({ stave: staves[idx], key, manual: false });
+        }
+      }
+
+      function removeFromSelection(key) {
+        setSelection(prev => prev.filter(e => e.key !== key));
+      }
+
+      const handlePageClick = useCallback(async (pageIndex, naturalY, naturalH) => {
+        setDetectingPage(pageIndex);
+        setDetectError(null);
+        try {
+          const res = await fetch(`${SCROLL_API_URL}/api/detect-staff`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId, pageIndex, yNatural: naturalY }),
+          });
+
+          let stave;
+          if (res.ok) {
+            stave = await res.json();
+            const alreadyDetected = staves.some(s =>
+              s.pageIndex === stave.pageIndex &&
+              s.lineTop < stave.lineBottom &&
+              stave.lineTop < s.lineBottom
+            );
+            if (alreadyDetected) {
+              setDetectError('That staff was already detected — click its grey box to select it');
+              return;
+            }
+          } else {
+            const pageStaves = staves.filter(s => s.pageIndex === pageIndex);
+            const pool = pageStaves.length > 0 ? pageStaves : staves;
+            const heights = pool.map(s => s.bottom - s.top).sort((a, b) => a - b);
+            const medianH = heights.length > 0 ? heights[Math.floor(heights.length / 2)] : Math.round(naturalH / 20);
+            const half = Math.round(medianH / 2);
+            const pad  = Math.round(medianH * 0.15);
+            const top    = Math.max(0, naturalY - half);
+            const bottom = Math.min(naturalH, naturalY + half);
+            stave = { top, bottom, lineTop: top + pad, lineBottom: bottom - pad, pageIndex };
+          }
+
+          const key = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          addEntry({ stave, key, manual: true });
+        } catch {
+          setDetectError('Network error — could not reach the API');
+        } finally {
+          setDetectingPage(null);
+        }
+      }, [jobId, staves]);
+
+      async function handleBuild(saveMode) { // 'add-another' | 'finish'
+        if (selection.length === 0) return;
+        setBuilding(true);
+        setBuildError('');
+        setScrollPreviewUrl(null);
+
+        try {
+          // Create the song record on first build
+          let sid = songId;
+          if (!sid) {
+            const res = await fetch(`${SCROLL_API_URL}/api/songs`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title,
+                ...(artist ? { artist } : {}),
+                ...(tempo && parseInt(tempo) > 0 ? { tempo: parseInt(tempo) } : {}),
+              }),
+            });
+            if (!res.ok) {
+              const d = await res.json().catch(() => ({}));
+              throw new Error(d.error ?? 'Failed to create song record');
+            }
+            const song = await res.json();
+            sid = song.id;
+            setSongId(sid);
+            const updated = JSON.parse(sessionStorage.getItem(sessionKey));
+            updated.songId = sid;
+            sessionStorage.setItem(sessionKey, JSON.stringify(updated));
+          }
+
+          const tempoNum = tempo.trim() ? parseInt(tempo) : undefined;
+          const measureNum = measures.trim() ? parseInt(measures) : undefined;
+          const bpmNum = beatsPerMeasure.trim() ? parseInt(beatsPerMeasure) : 4;
+          const beatsInScroll = measureNum && bpmNum > 0 ? measureNum * bpmNum : undefined;
+          const label = partLabel.trim() || null;
+
+          const res = await fetch(`${SCROLL_API_URL}/api/build`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jobId,
+              staves: selection.map(e => e.stave),
+              songId: sid,
+              ...(tempoNum && tempoNum > 0 ? { tempo: tempoNum } : {}),
+              ...(beatsInScroll && beatsInScroll > 0 ? { beatsInScroll } : {}),
+              rows,
+              padAbove,
+              padBelow,
+              ...(label ? { partLabel: label } : {}),
+            }),
+          });
+
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            throw new Error(d.error ?? `HTTP ${res.status}`);
+          }
+
+          const blob = await res.blob();
+          setScrollPreviewUrl(URL.createObjectURL(blob));
+          setSavedParts(prev => [...prev, { label: label || 'All Parts' }]);
+
+          if (saveMode === 'add-another') {
+            setSelection([]);
+            setPartLabel('');
+            setScrollPreviewUrl(null);
+          }
+        } catch (err) {
+          setBuildError(err instanceof Error ? err.message : 'Build failed');
+        } finally {
+          setBuilding(false);
+        }
+      }
+
+      // Group staves by page
+      const stavesByPage = {};
+      staves.forEach((_, idx) => {
+        const pg = staves[idx].pageIndex;
+        (stavesByPage[pg] = stavesByPage[pg] || []).push(idx);
+      });
+      const manualByPage = {};
+      selection.filter(e => e.manual).forEach(e => {
+        const pg = e.stave.pageIndex;
+        (manualByPage[pg] = manualByPage[pg] || []).push(e);
+      });
+
+      const beatsTotal = measures && beatsPerMeasure
+        ? parseInt(measures) * parseInt(beatsPerMeasure) : null;
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          {/* Header */}
+          <header className="sticky top-0 z-20 bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4"
+            style={{ paddingRight: '15rem' }}>
+            <a href="upload.html" className="text-gray-400 hover:text-gray-700 text-sm shrink-0">← Upload</a>
+            <h1 className="text-lg font-semibold shrink-0 truncate max-w-xs">{title}</h1>
+            <div className="flex-1 text-sm text-gray-500 truncate min-w-0">
+              {detectingPage !== null
+                ? `Detecting staff on page ${detectingPage + 1}…`
+                : selection.length === 0
+                ? 'Click a grey box to select a stave. Click blank space to detect missed staves.'
+                : `${selection.length} stave${selection.length !== 1 ? 's' : ''} selected`}
+              {detectError && (
+                <span className="ml-2 text-amber-600 text-xs">{detectError}</span>
+              )}
+            </div>
+            <div className="shrink-0 flex gap-2">
+              {savedParts.length > 0 && (
+                <button
+                  onClick={() => handleBuild('add-another')}
+                  disabled={selection.length === 0 || building}
+                  className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Build & Add Part
+                </button>
+              )}
+              <button
+                onClick={() => handleBuild('finish')}
+                disabled={selection.length === 0 || building}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {building ? 'Building…' : savedParts.length > 0 ? 'Build & Finish' : 'Build Scroll'}
+              </button>
+            </div>
+          </header>
+
+          {/* Pages */}
+          <div style={{ paddingRight: '14rem' }}>
+            <div className="flex flex-col items-center gap-8 p-6">
+              {Array.from({ length: pageCount }, (_, pageIdx) => (
+                <PageView
+                  key={pageIdx}
+                  jobId={jobId}
+                  pageIndex={pageIdx}
+                  staveIndices={stavesByPage[pageIdx] || []}
+                  staves={staves}
+                  selectionPos={selectionPos}
+                  manualEntries={manualByPage[pageIdx] || []}
+                  detecting={detectingPage === pageIdx}
+                  onToggle={toggleAutoStave}
+                  onRemoveManual={removeFromSelection}
+                  onPageClick={handlePageClick}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <aside className="fixed right-0 border-l border-gray-200 bg-white flex flex-col"
+            style={{ top: '3.75rem', height: 'calc(100vh - 3.75rem)', width: '14rem' }}>
+
+            {/* Controls */}
+            <div className="shrink-0 border-b border-gray-100 p-3 flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: '60%' }}>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Part Label</p>
+              <input
+                list="part-suggestions"
+                value={partLabel}
+                onChange={e => setPartLabel(e.target.value)}
+                placeholder="e.g. Tenor (optional)"
+                className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-700"
+              />
+              <datalist id="part-suggestions">
+                <option value="Soprano" />
+                <option value="Alto" />
+                <option value="Tenor" />
+                <option value="Bass" />
+                <option value="Lead" />
+                <option value="All Parts" />
+              </datalist>
+
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400 shrink-0">BPM</label>
+                <input
+                  type="number" min={20} max={400}
+                  value={tempo}
+                  onChange={e => setTempo(e.target.value)}
+                  placeholder="e.g. 120"
+                  className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400 shrink-0">Bars</label>
+                <input
+                  type="number" min={1}
+                  value={measures}
+                  onChange={e => setMeasures(e.target.value)}
+                  placeholder="e.g. 32"
+                  className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400 shrink-0 whitespace-nowrap">Beats/bar</label>
+                <input
+                  type="number" min={1} max={16}
+                  value={beatsPerMeasure}
+                  onChange={e => setBeatsPerMeasure(e.target.value)}
+                  className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                />
+              </div>
+              {beatsTotal !== null && !isNaN(beatsTotal) && (
+                <p className="text-xs text-gray-400">= {beatsTotal} beats total</p>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <label className="text-xs text-gray-400 shrink-0">Layout</label>
+                <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
+                  <button type="button" onClick={() => setRows(1)}
+                    className={`px-2 py-1 ${rows === 1 ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                    1 row
+                  </button>
+                  <button type="button" onClick={() => setRows(2)}
+                    className={`px-2 py-1 border-l border-gray-200 ${rows === 2 ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                    2 rows
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <label className="text-xs text-gray-400 shrink-0">Pad ↑</label>
+                <input type="number" min={0} max={2} step={0.05}
+                  value={padAbove}
+                  onChange={e => setPadAbove(parseFloat(e.target.value))}
+                  className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400 shrink-0">Pad ↓</label>
+                <input type="number" min={0} max={3} step={0.05}
+                  value={padBelow}
+                  onChange={e => setPadBelow(parseFloat(e.target.value))}
+                  className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-700"
+                />
+              </div>
+            </div>
+
+            {/* Scroll order */}
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Scroll order</h2>
+              {selection.length === 0 && (
+                <p className="text-xs text-gray-400 italic">Nothing selected yet</p>
+              )}
+              {selection.map((entry, pos) => (
+                <div key={entry.key}
+                  className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${entry.manual ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                  <span className={`w-4 text-center font-mono font-bold ${entry.manual ? 'text-green-700' : 'text-indigo-600'}`}>
+                    {pos + 1}
+                  </span>
+                  <span className="flex-1 text-gray-600 truncate">
+                    p{entry.stave.pageIndex + 1}{entry.manual ? ' ✦' : ''}
+                  </span>
+                  <button onClick={() => removeFromSelection(entry.key)}
+                    className="text-gray-300 hover:text-red-500 font-bold leading-none">×</button>
+                </div>
+              ))}
+              {selection.length > 0 && (
+                <button onClick={() => setSelection([])}
+                  className="mt-1 text-xs text-gray-400 hover:text-red-500 underline">
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            {/* Saved parts */}
+            {savedParts.length > 0 && (
+              <div className="shrink-0 border-t border-gray-100 p-3">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Saved parts</h2>
+                {savedParts.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs text-gray-600 py-0.5">
+                    <span className="text-green-600">✓</span>
+                    <span>{p.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Build result */}
+            {(buildError || scrollPreviewUrl) && (
+              <div className="shrink-0 border-t border-gray-200 p-3 flex flex-col gap-2">
+                {buildError && <p className="text-xs text-red-600">{buildError}</p>}
+                {scrollPreviewUrl && (
+                  <>
+                    <p className="text-xs font-semibold text-green-600">✓ Saved to library</p>
+                    <img
+                      src={scrollPreviewUrl}
+                      alt="Scroll preview"
+                      className="border border-gray-200 rounded w-full"
+                      style={{ maxHeight: 50, objectFit: 'contain', objectPosition: 'left' }}
+                    />
+                    <a href="index.html" className="text-xs text-indigo-600 hover:underline">← Back to library</a>
+                  </>
+                )}
+              </div>
+            )}
+          </aside>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<SelectPage />);
+  </script>
+</body>
+</html>
