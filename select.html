@@ -260,28 +260,9 @@
         setScrollPreviewUrl(null);
 
         try {
-          // Create the song record on first build
-          let sid = songId;
+          const sid = songId;
           if (!sid) {
-            const res = await fetch(`${SCROLL_API_URL}/api/songs`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                title,
-                ...(artist ? { artist } : {}),
-                ...(tempo && parseInt(tempo) > 0 ? { tempo: parseInt(tempo) } : {}),
-              }),
-            });
-            if (!res.ok) {
-              const d = await res.json().catch(() => ({}));
-              throw new Error(d.error ?? 'Failed to create song record');
-            }
-            const song = await res.json();
-            sid = song.id;
-            setSongId(sid);
-            const updated = JSON.parse(sessionStorage.getItem(sessionKey));
-            updated.songId = sid;
-            sessionStorage.setItem(sessionKey, JSON.stringify(updated));
+            throw new Error('No song selected — go back to upload and pick a song.');
           }
 
           const tempoNum = tempo.trim() ? parseInt(tempo) : undefined;

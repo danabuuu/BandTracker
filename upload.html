@@ -17,7 +17,170 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <script type="text/babel">
-    const { useState, useRef } = React;
+    const { useState, useRef, useEffect } = React;
+
+    const SCROLL_API_URL = 'https://er-shettmusicscroll-api.vercel.app';
+
+    function UploadPage() {
+      const [songs, setSongs] = useState([]);
+      const [loadingSongs, setLoadingSongs] = useState(true);
+      const [selectedSongId, setSelectedSongId] = useState('');
+      const [search, setSearch] = useState('');
+      const [status, setStatus] = useState('idle'); // idle | uploading | error
+      const [error, setError] = useState('');
+      const fileRef = useRef(null);
+
+      useEffect(() => {
+        fetch(`${SCROLL_API_URL}/api/songs`)
+          .then(r => r.json())
+          .then(data => { setSongs(data); setLoadingSongs(false); })
+          .catch(() => setLoadingSongs(false));
+      }, []);
+
+      const filtered = search.trim()
+        ? songs.filter(s =>
+            s.title.toLowerCase().includes(search.toLowerCase()) ||
+            (s.artist || '').toLowerCase().includes(search.toLowerCase())
+          )
+        : songs;
+
+      const selectedSong = songs.find(s => String(s.id) === selectedSongId) || null;
+
+      async function handleSubmit(e) {
+        e.preventDefault();
+        const file = fileRef.current?.files?.[0];
+        if (!file || !selectedSongId) return;
+
+        setStatus('uploading');
+        setError('');
+
+        try {
+          const form = new FormData();
+          form.append('pdf', file);
+
+          const res = await fetch(`${SCROLL_API_URL}/api/analyze`, {
+            method: 'POST',
+            body: form,
+          });
+
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error ?? `HTTP ${res.status}`);
+          }
+
+          const { jobId, analysis } = await res.json();
+
+          sessionStorage.setItem(`scroll-job-${jobId}`, JSON.stringify({
+            analysis,
+            title: selectedSong.title,
+            artist: selectedSong.artist || null,
+            bpm: selectedSong.tempo || null,
+            songId: selectedSong.id,
+          }));
+
+          window.location.href = `select.html?job=${encodeURIComponent(jobId)}`;
+        } catch (err) {
+          setStatus('error');
+          setError(err instanceof Error ? err.message : 'Upload failed');
+        }
+      }
+
+      return (
+        <div className="bg-slate-800 rounded-2xl shadow-xl p-8 w-full max-w-md">
+          <div className="mb-6">
+            <a href="index.html" className="text-slate-400 hover:text-white text-sm">← Back to library</a>
+          </div>
+          <h1 className="text-2xl font-semibold mb-6">Upload Sheet Music PDF</h1>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-slate-300">
+                Song <span className="text-red-400">*</span>
+              </span>
+              <input
+                type="text"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setSelectedSongId(''); }}
+                placeholder={loadingSongs ? 'Loading songs…' : 'Search by title or artist…'}
+                disabled={loadingSongs}
+                className="rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+              />
+              {search.trim() && !selectedSongId && (
+                <div className="rounded-lg bg-slate-700 border border-slate-600 max-h-52 overflow-y-auto divide-y divide-slate-600">
+                  {filtered.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-slate-400">No songs found</p>
+                  )}
+                  {filtered.map(s => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => { setSelectedSongId(String(s.id)); setSearch(s.title + (s.artist ? ` · ${s.artist}` : '')); }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-600 transition-colors"
+                    >
+                      <span className="font-medium">{s.title}</span>
+                      {s.artist && <span className="ml-1 text-slate-400 text-xs">· {s.artist}</span>}
+                      {s.tempo && <span className="ml-1 text-indigo-400 text-xs">{s.tempo} BPM</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedSong && (
+                <div className="rounded-lg bg-indigo-900/40 border border-indigo-600 px-3 py-2 text-sm flex items-center justify-between">
+                  <span>
+                    <span className="font-medium">{selectedSong.title}</span>
+                    {selectedSong.artist && <span className="ml-1 text-slate-400">· {selectedSong.artist}</span>}
+                    {selectedSong.tempo && <span className="ml-1 text-indigo-400">{selectedSong.tempo} BPM</span>}
+                  </span>
+                  <button type="button" onClick={() => { setSelectedSongId(''); setSearch(''); }}
+                    className="text-slate-400 hover:text-white ml-3 font-bold">×</button>
+                </div>
+              )}
+            </div>
+
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-slate-300">
+                PDF file <span className="text-red-400">*</span>
+              </span>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                required
+                className="text-sm text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-sm file:font-medium hover:file:bg-indigo-500 cursor-pointer"
+              />
+            </label>
+
+            {error && <p className="text-sm text-red-400">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={!selectedSongId || status === 'uploading'}
+              className="mt-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {status === 'uploading' ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  Analyzing PDF…
+                </span>
+              ) : 'Analyze PDF'}
+            </button>
+          </form>
+
+          <p className="mt-4 text-xs text-slate-500">
+            Large PDFs may take up to 30 seconds to analyze.
+          </p>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<UploadPage />);
+  </script>
+</body>
+</html>
+
 
     const SCROLL_API_URL = 'https://er-shettmusicscroll-api.vercel.app';
 
