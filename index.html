@@ -1620,6 +1620,28 @@
                                       onChange={(e) => updateSong(song.id, 'duration', e.target.value)}
                                       className="bg-white/20 text-white placeholder-white/30 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
                                     />
+                                    {(() => {
+                                      const bpm = parseInt(song.tempo);
+                                      const bars = song.beats_in_scroll ? Math.round(song.beats_in_scroll / (song.beats_per_bar || 4)) : 0;
+                                      if (bpm > 0 && bars > 0) {
+                                        const totalSecs = Math.round((bars * 4 / bpm) * 60);
+                                        const mm = Math.floor(totalSecs / 60);
+                                        const ss = String(totalSecs % 60).padStart(2, '0');
+                                        const calc = `${mm}:${ss}`;
+                                        if (calc !== song.duration) {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => updateSong(song.id, 'duration', calc)}
+                                              className="text-left text-indigo-300 text-xs hover:text-indigo-100"
+                                            >
+                                              → {calc} from BPM×bars
+                                            </button>
+                                          );
+                                        }
+                                      }
+                                      return null;
+                                    })()}
                                   </label>
                                   <label className="flex flex-col gap-1">
                                     <span className="text-white/50 text-xs font-medium uppercase tracking-wide">Key</span>
@@ -1709,11 +1731,23 @@
                                     return (
                                       <div className="mt-3 flex flex-wrap items-center gap-2">
                                         {parts.map((part, i) => (
-                                          <span key={i}
-                                            className="inline-flex items-center gap-1 bg-indigo-500/30 border border-indigo-400/50 text-indigo-200 text-xs font-semibold px-2 py-1 rounded-full">
-                                            <Icon name="image" />
-                                            {part.label || `Part ${i+1}`}
-                                          </span>
+                                          part.imageUrl ? (
+                                            <a key={i}
+                                              href={part.imageUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-flex items-center gap-1 bg-indigo-500/30 border border-indigo-400/50 text-indigo-200 text-xs font-semibold px-2 py-1 rounded-full hover:bg-indigo-500/50 transition-colors cursor-pointer"
+                                              title="Open strip image">
+                                              <Icon name="image" />
+                                              {part.label || `Part ${i+1}`}
+                                            </a>
+                                          ) : (
+                                            <span key={i}
+                                              className="inline-flex items-center gap-1 bg-indigo-500/30 border border-indigo-400/50 text-indigo-200 text-xs font-semibold px-2 py-1 rounded-full">
+                                              <Icon name="image" />
+                                              {part.label || `Part ${i+1}`}
+                                            </span>
+                                          )
                                         ))}
                                         {user && (
                                           <a
