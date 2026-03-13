@@ -82,12 +82,15 @@
 
           const { jobId, analysis } = await res.json();
 
+          const urlParams = new URLSearchParams(window.location.search);
           sessionStorage.setItem(`scroll-job-${jobId}`, JSON.stringify({
             analysis,
             title: selectedSong.title,
             artist: selectedSong.artist || null,
             bpm: selectedSong.tempo || null,
             songId: selectedSong.id,
+            returnTo: urlParams.get('returnTo') || null,
+            gigId: urlParams.get('gigId') || null,
           }));
 
           window.location.href = `select.html?job=${encodeURIComponent(jobId)}`;
