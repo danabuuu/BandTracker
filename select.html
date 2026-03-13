@@ -31,7 +31,7 @@
     // ─── PageView ─────────────────────────────────────────────────────────────
 
     function PageView({ jobId, pageIndex, staveIndices, staves, selectionPos, manualEntries,
-                        detecting, onToggle, onRemoveManual, onPageClick }) {
+                        detecting, onToggle, onRemoveManual, onPageClick, padAbove, padBelow }) {
       const containerRef = useRef(null);
       const [dims, setDims] = useState(null);
       const [renderW, setRenderW] = useState(0);
@@ -101,6 +101,24 @@
                           {pos}
                         </text>
                       )}
+                    </g>
+                  );
+                })}
+                {/* Padding preview lines for selected staves */}
+                {[...staveIndices
+                    .filter(idx => selectionPos.has(`auto-${idx}`))
+                    .map(idx => staves[idx]),
+                  ...manualEntries.map(e => e.stave)
+                ].map((stave, i) => {
+                  const staffH = stave.lineBottom - stave.lineTop;
+                  const cropTop    = Math.max(0, stave.lineTop    - staffH * padAbove) * scale;
+                  const cropBottom = Math.min(stave.lineBottom + staffH * padBelow, dims.h - 1) * scale;
+                  return (
+                    <g key={`pad-${i}`} style={{ pointerEvents: 'none' }}>
+                      <line x1={0} x2={renderW} y1={cropTop}    y2={cropTop}
+                        stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3" />
+                      <line x1={0} x2={renderW} y1={cropBottom} y2={cropBottom}
+                        stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3" />
                     </g>
                   );
                 })}
@@ -376,6 +394,8 @@
                   onToggle={toggleAutoStave}
                   onRemoveManual={removeFromSelection}
                   onPageClick={handlePageClick}
+                  padAbove={padAbove}
+                  padBelow={padBelow}
                 />
               ))}
             </div>
