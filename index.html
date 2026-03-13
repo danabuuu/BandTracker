@@ -364,6 +364,8 @@
         if (!song.title.trim()) return;
 
         try {
+          const tempoVal = song.tempo ? parseInt(String(song.tempo)) || null : null;
+          const beatsVal = song.beats_in_scroll ? parseInt(String(song.beats_in_scroll)) || null : null;
           if (String(id).startsWith('temp-')) {
             const { data } = await supabaseClient.from('songs').insert([{
               title: song.title,
@@ -373,7 +375,9 @@
               genre: song.genre,
               composers: song.composers,
               voicing: song.voicing,
-              notes: song.notes
+              notes: song.notes,
+              tempo: tempoVal,
+              beats_in_scroll: beatsVal,
             }]).select();
             if (data) setSongs(songs.map(s => s.id === id ? { ...data[0], editing: false } : s));
           } else {
@@ -385,7 +389,9 @@
               genre: song.genre,
               composers: song.composers,
               voicing: song.voicing,
-              notes: song.notes
+              notes: song.notes,
+              tempo: tempoVal,
+              beats_in_scroll: beatsVal,
             }).eq('id', id);
             setSongs(songs.map(s => s.id === id ? { ...s, editing: false } : s));
           }
@@ -1125,13 +1131,7 @@
                               <Icon name="plus" />
                               {showAddSongForm ? 'Close Add Song' : 'Add Song'}
                             </button>
-                            <a
-                              href="upload.html"
-                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm font-medium"
-                            >
-                              <Icon name="music" />
-                              Upload Sheet Music PDF
-                            </a>
+
                           </>
                         )}
                       </div>
@@ -1611,6 +1611,25 @@
                                     className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
                                   />
                                 </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <input
+                                    type="number"
+                                    placeholder="BPM (tempo)"
+                                    value={song.tempo || ''}
+                                    onChange={(e) => updateSong(song.id, 'tempo', e.target.value)}
+                                    className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                                  />
+                                  <input
+                                    type="number"
+                                    placeholder="Measures (bars)"
+                                    value={song.beats_in_scroll ? Math.round(song.beats_in_scroll / (song.beats_per_bar || 4)) : ''}
+                                    onChange={(e) => {
+                                      const measures = parseInt(e.target.value) || 0;
+                                      updateSong(song.id, 'beats_in_scroll', measures * (song.beats_per_bar || 4));
+                                    }}
+                                    className="bg-white/20 text-white placeholder-white/50 px-3 py-2 rounded border border-white/30 focus:outline-none focus:border-white/60"
+                                  />
+                                </div>
                                 <textarea
                                   placeholder="Notes"
                                   value={song.notes || ''}
@@ -1649,9 +1668,35 @@
                                   <div className="text-white/70 mt-1">
                                     {song.voicing && <span className="mr-4">Voicing: {song.voicing}</span>}
                                     {song.duration && <span className="mr-4">Duration: {song.duration}</span>}
-                                    {song.key && <span>Key: {song.key}</span>}
+                                    {song.key && <span className="mr-4">Key: {song.key}</span>}
+                                    {song.tempo && <span className="mr-4">♩ {song.tempo} BPM</span>}
+                                    {song.beats_in_scroll > 0 && <span>{Math.round(song.beats_in_scroll / 4)} bars</span>}
                                   </div>
                                   {song.notes && <p className="text-white/60 mt-2 text-sm">{song.notes}</p>}
+                                  {/* Scroll strips */}
+                                  {(() => {
+                                    const parts = Array.isArray(song.parts) ? song.parts : [];
+                                    return (
+                                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                                        {parts.map((part, i) => (
+                                          <span key={i}
+                                            className="inline-flex items-center gap-1 bg-indigo-500/30 border border-indigo-400/50 text-indigo-200 text-xs font-semibold px-2 py-1 rounded-full">
+                                            <Icon name="image" />
+                                            {part.label || `Part ${i+1}`}
+                                          </span>
+                                        ))}
+                                        {user && (
+                                          <a
+                                            href={`upload.html?songId=${song.id}`}
+                                            className="inline-flex items-center gap-1 bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-semibold px-2 py-1 rounded-full hover:bg-amber-500/40 transition-colors"
+                                          >
+                                            <Icon name="plus" />
+                                            Create Strip
+                                          </a>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                   {(() => {
                                     const songGigs = getGigsForSong(song.id);
                                     return songGigs.length > 0 ? (
@@ -2037,8 +2082,24 @@ No songs found matching "{searchQuery[gig.id]}"
                                           <div className="text-white/60 text-sm">
                                             {song.duration && <span className="mr-3">⏱️ {song.duration}</span>}
                                             {song.key && <span className="mr-3">🎵 {song.key}</span>}
+                                            {song.tempo && <span className="mr-3">♩{song.tempo}</span>}
                                             {song.artist && <span>{song.artist}</span>}
                                           </div>
+                                          {/* Strip status */}
+                                          {(() => {
+                                            const parts = Array.isArray(song.parts) ? song.parts : [];
+                                            return parts.length > 0 ? (
+                                              <div className="flex flex-wrap gap-1 mt-1">
+                                                {parts.map((p, i) => (
+                                                  <span key={i} className="bg-green-500/30 text-green-200 text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                                                    {p.label || `P${i+1}`}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <span className="text-white/30 text-xs">no strips</span>
+                                            );
+                                          })()}
                                         </div>
                                         <div className="flex gap-1">
                                           <button

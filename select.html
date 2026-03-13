@@ -318,6 +318,9 @@
             setSelection([]);
             setPartLabel('');
             setScrollPreviewUrl(null);
+          } else {
+            // 'finish' — return to song library
+            window.location.href = 'index.html';
           }
         } catch (err) {
           setBuildError(err instanceof Error ? err.message : 'Build failed');
@@ -359,21 +362,19 @@
               )}
             </div>
             <div className="shrink-0 flex gap-2">
-              {savedParts.length > 0 && (
-                <button
-                  onClick={() => handleBuild('add-another')}
-                  disabled={selection.length === 0 || building}
-                  className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Build & Add Part
-                </button>
-              )}
+              <button
+                onClick={() => handleBuild('add-another')}
+                disabled={selection.length === 0 || building}
+                className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Build &amp; Add Part
+              </button>
               <button
                 onClick={() => handleBuild('finish')}
                 disabled={selection.length === 0 || building}
                 className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {building ? 'Building…' : savedParts.length > 0 ? 'Build & Finish' : 'Build Scroll'}
+                {building ? 'Building…' : 'Build &amp; Finish'}
               </button>
             </div>
           </header>
