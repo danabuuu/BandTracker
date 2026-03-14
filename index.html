@@ -2153,19 +2153,40 @@ No songs found matching "{searchQuery[gig.id]}"
                                           {(() => {
                                             const parts = Array.isArray(song.parts) ? song.parts : [];
                                             return (
-                                              <div className="flex flex-wrap items-center gap-1 mt-1">
-                                                {parts.length > 0 ? parts.map((p, i) => (
-                                                  <span key={i} className="bg-green-500/30 text-green-200 text-xs px-1.5 py-0.5 rounded-full font-semibold">
-                                                    {p.label || `P${i+1}`}
-                                                  </span>
-                                                )) : (
-                                                  <span className="text-white/30 text-xs">no strips</span>
+                                              <div className="flex flex-col gap-1 mt-1">
+                                                <div className="flex flex-wrap items-center gap-1">
+                                                  {parts.length > 0 ? parts.map((p, i) =>
+                                                    p.imageUrl ? (
+                                                      <a key={i} href={p.imageUrl} target="_blank" rel="noopener noreferrer"
+                                                        className="bg-green-500/30 text-green-200 text-xs px-1.5 py-0.5 rounded-full font-semibold hover:bg-green-500/50 transition-colors"
+                                                        title="View strip">
+                                                        {p.label || `P${i+1}`}
+                                                      </a>
+                                                    ) : (
+                                                      <span key={i} className="bg-green-500/30 text-green-200 text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                                                        {p.label || `P${i+1}`}
+                                                      </span>
+                                                    )
+                                                  ) : (
+                                                    <span className="text-white/30 text-xs">no strips</span>
+                                                  )}
+                                                  <a
+                                                    href={`upload.html?songId=${songId}&returnTo=setlist&gigId=${gig.id}`}
+                                                    className="text-indigo-300 hover:text-indigo-100 text-xs px-1 py-0.5 rounded hover:bg-white/10"
+                                                    title="Upload PDF to create a new strip"
+                                                  >+ Strip</a>
+                                                </div>
+                                                {parts.some(p => p.imageUrl) && (
+                                                  <div className="flex flex-wrap gap-2">
+                                                    {parts.filter(p => p.imageUrl).map((p, i) => (
+                                                      <a key={i} href={p.imageUrl} target="_blank" rel="noopener noreferrer" title={p.label || `Part ${i+1}`}>
+                                                        <img src={p.imageUrl} alt={p.label || `Part ${i+1}`}
+                                                          className="rounded border border-white/20"
+                                                          style={{ height: '36px', objectFit: 'contain', objectPosition: 'left' }} />
+                                                      </a>
+                                                    ))}
+                                                  </div>
                                                 )}
-                                                <a
-                                                  href={`upload.html?songId=${songId}&returnTo=setlist&gigId=${gig.id}`}
-                                                  className="text-indigo-300 hover:text-indigo-100 text-xs px-1 py-0.5 rounded hover:bg-white/10"
-                                                  title="Upload PDF to create a new strip"
-                                                >+ Strip</a>
                                               </div>
                                             );
                                           })()}
