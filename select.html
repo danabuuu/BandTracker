@@ -269,7 +269,7 @@
       }
 
       function nudgeSelection(key, dir) {
-        const NUDGE_PX = 3;
+        const NUDGE_PX = 2;
         setSelection(prev => prev.map(e => {
           if (e.key !== key) return e;
           const d = dir * NUDGE_PX;
