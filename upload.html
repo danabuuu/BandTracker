@@ -36,6 +36,12 @@
         fetch(`${SCROLL_API_URL}/api/songs`)
           .then(r => r.json())
           .then(data => {
+            if (!Array.isArray(data)) {
+              console.error('api/songs returned unexpected response:', data);
+              setLoadingSongs(false);
+              setError((data && data.error) ? `API error: ${data.error}` : 'Failed to load songs');
+              return;
+            }
             setSongs(data);
             setLoadingSongs(false);
             if (urlSongId) {
@@ -46,7 +52,7 @@
               }
             }
           })
-          .catch(() => setLoadingSongs(false));
+          .catch(err => { setLoadingSongs(false); setError('Failed to load songs: ' + err.message); });
       }, []);
 
       const filtered = search.trim()
