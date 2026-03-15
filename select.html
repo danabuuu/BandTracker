@@ -225,7 +225,7 @@
       const [scrollPreviewUrl, setScrollPreviewUrl] = useState(null);
       const [savedParts, setSavedParts]       = useState([]);
       const [hiddenAutoStaves, setHiddenAutoStaves] = useState(() => new Set());
-      const [partLabel, setPartLabel]           = useState('');
+      const [partLabel, setPartLabel]           = useState('S');
       const [tempo, setTempo]                   = useState(sessionBpm ? String(sessionBpm) : '');
       const [measures, setMeasures]             = useState(
         sessionBeatsInScroll ? String(Math.round(sessionBeatsInScroll / 4)) : ''
@@ -368,11 +368,14 @@
 
           const blob = await res.blob();
           setScrollPreviewUrl(URL.createObjectURL(blob));
-          setSavedParts(prev => [...prev, { label: label || 'All Parts' }]);
+          setSavedParts(prev => [...prev, { label: label }]);
+
+          const usedLabels = new Set([...savedParts.map(p => p.label), label]);
+          const nextLabel = ['S','A','T','B'].find(l => !usedLabels.has(l)) ?? 'S';
 
           if (saveMode === 'add-another') {
             setSelection([]);
-            setPartLabel('');
+            setPartLabel(nextLabel);
             setScrollPreviewUrl(null);
           } else {
             // 'finish' — return to setlist or song library
@@ -471,21 +474,16 @@
             {/* Controls */}
             <div className="shrink-0 border-b border-gray-100 p-3 flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: '60%' }}>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Part Label</p>
-              <input
-                list="part-suggestions"
+              <select
                 value={partLabel}
                 onChange={e => setPartLabel(e.target.value)}
-                placeholder="e.g. Tenor (optional)"
                 className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-700"
-              />
-              <datalist id="part-suggestions">
-                <option value="Soprano" />
-                <option value="Alto" />
-                <option value="Tenor" />
-                <option value="Bass" />
-                <option value="Lead" />
-                <option value="All Parts" />
-              </datalist>
+              >
+                <option value="S">S — Soprano</option>
+                <option value="A">A — Alto</option>
+                <option value="T">T — Tenor</option>
+                <option value="B">B — Bass</option>
+              </select>
 
               <div className="flex items-center gap-2">
                 <label className="text-xs text-gray-400 shrink-0">BPM</label>
