@@ -226,7 +226,7 @@
       const [savedParts, setSavedParts]       = useState([]);
       const [hiddenAutoStaves, setHiddenAutoStaves] = useState(() => new Set());
       const PART_LABEL_OPTIONS = ['S 1R','S 2R','A 1R','A 2R','T 1R','T 2R','B 1R','B 2R'];
-      const [partLabel, setPartLabel]           = useState('S 2R');
+      const [partLabel, setPartLabel]           = useState('T 2R');
       const [tempo, setTempo]                   = useState(sessionBpm ? String(sessionBpm) : '');
       const [measures, setMeasures]             = useState(
         sessionBeatsInScroll ? String(Math.round(sessionBeatsInScroll / 4)) : ''
