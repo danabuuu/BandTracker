@@ -31,7 +31,7 @@
     // ─── PageView ─────────────────────────────────────────────────────────────
 
     function PageView({ jobId, pageIndex, staveIndices, staves, selectionPos, selectionEntries, manualEntries,
-                        detecting, onToggle, onRemoveManual, onHideStave, onPageClick, padAbove, padBelow, onNudge }) {
+                        detecting, onToggle, onRemoveManual, onHideStave, onPageClick, padAbove, padBelow, onNudge, onCrop }) {
       const containerRef = useRef(null);
       const [dims, setDims] = useState(null);
       const [renderW, setRenderW] = useState(0);
@@ -145,7 +145,89 @@
                     </g>
                   );
                 })}
-                {/* Manual entries */}
+                {/* Crop handles on selected staves */}
+                {selectionEntries
+                  .filter(e => e.stave.pageIndex === pageIndex)
+                  .map(entry => {
+                    const s = entry.stave;
+                    const top    = s.top    * scale;
+                    const bottom = s.bottom * scale;
+                    const leftPx  = renderW * ((entry.cropLeft  ?? 0) / 100);
+                    const rightPx = renderW * ((entry.cropRight ?? 0) / 100);
+                    const HANDLE_W = 14;
+
+                    function startCropDrag(side, e) {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const svgEl = e.currentTarget.closest('svg');
+                      const rect  = svgEl.getBoundingClientRect();
+                      function onMove(mv) {
+                        const frac = Math.max(0, Math.min(1, (mv.clientX - rect.left) / rect.width));
+                        if (side === 'cropLeft') {
+                          onCrop(entry.key, 'cropLeft', Math.min(frac * 100, 90 - (entry.cropRight ?? 0)));
+                        } else {
+                          onCrop(entry.key, 'cropRight', Math.min((1 - frac) * 100, 90 - (entry.cropLeft ?? 0)));
+                        }
+                      }
+                      function onUp() {
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onUp);
+                      }
+                      window.addEventListener('mousemove', onMove);
+                      window.addEventListener('mouseup', onUp);
+                    }
+
+                    return (
+                      <g key={`crop-${entry.key}`} style={{ pointerEvents: 'all' }}>
+                        {/* left cropped zone overlay */}
+                        {leftPx > 0 && (
+                          <rect x={0} y={top} width={leftPx} height={bottom - top}
+                            fill="rgba(0,0,0,0.35)" style={{ pointerEvents: 'none' }} />
+                        )}
+                        {/* right cropped zone overlay */}
+                        {rightPx > 0 && (
+                          <rect x={renderW - rightPx} y={top} width={rightPx} height={bottom - top}
+                            fill="rgba(0,0,0,0.35)" style={{ pointerEvents: 'none' }} />
+                        )}
+                        {/* left handle */}
+                        <g onMouseDown={e => startCropDrag('cropLeft', e)} style={{ cursor: 'ew-resize' }}>
+                          <rect x={leftPx} y={top} width={HANDLE_W} height={bottom - top}
+                            fill="rgba(251,191,36,0.9)" rx={3} />
+                          <text x={leftPx + HANDLE_W / 2} y={(top + bottom) / 2 + 4}
+                            textAnchor="middle" fill="#78350f" fontSize={10} fontWeight="bold"
+                            style={{ userSelect: 'none', pointerEvents: 'none' }}>⇤</text>
+                        </g>
+                        {/* right handle */}
+                        <g onMouseDown={e => startCropDrag('cropRight', e)} style={{ cursor: 'ew-resize' }}>
+                          <rect x={renderW - rightPx - HANDLE_W} y={top} width={HANDLE_W} height={bottom - top}
+                            fill="rgba(251,191,36,0.9)" rx={3} />
+                          <text x={renderW - rightPx - HANDLE_W / 2} y={(top + bottom) / 2 + 4}
+                            textAnchor="middle" fill="#78350f" fontSize={10} fontWeight="bold"
+                            style={{ userSelect: 'none', pointerEvents: 'none' }}>⇥</text>
+                        </g>
+                        {/* crop % labels */}
+                        {(leftPx > 0 || rightPx > 0) && (
+                          <>
+                            {leftPx > 0 && (
+                              <text x={leftPx + HANDLE_W + 3} y={top + 13}
+                                fill="#f59e0b" fontSize={10} fontWeight="bold"
+                                style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                                {Math.round(entry.cropLeft ?? 0)}%
+                              </text>
+                            )}
+                            {rightPx > 0 && (
+                              <text x={renderW - rightPx - HANDLE_W - 3} y={top + 13}
+                                textAnchor="end" fill="#f59e0b" fontSize={10} fontWeight="bold"
+                                style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                                {Math.round(entry.cropRight ?? 0)}%
+                              </text>
+                            )}
+                          </>
+                        )}
+                      </g>
+                    );
+                  })}
+                {/* Manual entries */}}
                 {manualEntries.map(entry => {
                   const { stave } = entry;
                   const top    = stave.top    * scale;
@@ -550,6 +632,7 @@
                   padAbove={padAbove}
                   padBelow={padBelow}
                   onNudge={nudgeSelection}
+                  onCrop={setCropForKey}
                 />
               ))}
             </div>
@@ -631,22 +714,23 @@
               )}
               {selection.map((entry, pos) => (
                 <div key={entry.key}
-                  className={`rounded border text-xs ${
+                  className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${
                     entry.manual ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
                   }`}>
-                  {/* Row: number / label / remove */}
-                  <div className="flex items-center gap-1 px-2 py-1">
-                    <span className={`w-4 text-center font-mono font-bold shrink-0 ${entry.manual ? 'text-green-700' : 'text-indigo-600'}`}>
-                      {pos + 1}
-                    </span>
-                    <span className="flex-1 text-gray-600 truncate">
-                      p{entry.stave.pageIndex + 1}{entry.manual ? ' ✦' : ''}
-                    </span>
-                    <button onClick={e => { e.stopPropagation(); removeFromSelection(entry.key); }}
-                      className="text-gray-300 hover:text-red-500 font-bold leading-none">×</button>
-                  </div>
-                  {/* Crop handles bar */}
-                  <CropBar entry={entry} onCrop={setCropForKey} />
+                  <span className={`w-4 text-center font-mono font-bold shrink-0 ${entry.manual ? 'text-green-700' : 'text-indigo-600'}`}>
+                    {pos + 1}
+                  </span>
+                  <span className="flex-1 text-gray-600 truncate">
+                    p{entry.stave.pageIndex + 1}{entry.manual ? ' ✦' : ''}
+                    {((entry.cropLeft ?? 0) > 0 || (entry.cropRight ?? 0) > 0) && (
+                      <span className="ml-1 text-amber-500">
+                        {(entry.cropLeft ?? 0) > 0 ? `◀${Math.round(entry.cropLeft)}%` : ''}
+                        {(entry.cropRight ?? 0) > 0 ? ` ${Math.round(entry.cropRight)}%▶` : ''}
+                      </span>
+                    )}
+                  </span>
+                  <button onClick={e => { e.stopPropagation(); removeFromSelection(entry.key); }}
+                    className="text-gray-300 hover:text-red-500 font-bold leading-none">×</button>
                 </div>
               ))}
               {selection.length > 0 && (
