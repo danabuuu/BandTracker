@@ -35,6 +35,7 @@
       const containerRef = useRef(null);
       const [dims, setDims] = useState(null);
       const [renderW, setRenderW] = useState(0);
+      const cropDragRef = useRef(null); // { key, side } when a crop drag is active
 
       useEffect(() => {
         if (!containerRef.current) return;
@@ -46,10 +47,64 @@
       const scale = dims ? renderW / dims.w : 1;
 
       function handleSvgClick(e) {
+        // If a crop drag just finished, swallow this click.
+        if (cropDragRef.current === 'done') {
+          cropDragRef.current = null;
+          return;
+        }
         if (!dims) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const naturalY = Math.round((e.clientY - rect.top) / scale);
         onPageClick(pageIndex, naturalY, dims.h);
+      }
+
+      function handleContainerMouseDown(e) {
+        if (!dims || !renderW) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const xPx = e.clientX - rect.left;
+        const yPx = e.clientY - rect.top;
+
+        // Check if the click lands on a crop handle for any selected stave on this page
+        const HANDLE_W = 14;
+        for (const entry of selectionEntries) {
+          if (entry.stave.pageIndex !== pageIndex) continue;
+          const s = entry.stave;
+          const top    = s.top    * scale;
+          const bottom = s.bottom * scale;
+          if (yPx < top || yPx > bottom) continue;
+
+          const leftHandleX  = renderW * ((entry.cropLeft  ?? 0) / 100);
+          const rightHandleX = renderW - renderW * ((entry.cropRight ?? 0) / 100) - HANDLE_W;
+
+          let hitSide = null;
+          if (xPx >= leftHandleX && xPx <= leftHandleX + HANDLE_W) hitSide = 'cropLeft';
+          else if (xPx >= rightHandleX && xPx <= rightHandleX + HANDLE_W) hitSide = 'cropRight';
+
+          if (hitSide) {
+            e.stopPropagation();
+            e.preventDefault();
+            cropDragRef.current = { key: entry.key, side: hitSide };
+
+            function onMove(mv) {
+              const frac = Math.max(0, Math.min(1, (mv.clientX - rect.left) / renderW));
+              const drag = cropDragRef.current;
+              if (!drag || drag === 'done') return;
+              if (drag.side === 'cropLeft') {
+                onCrop(drag.key, 'cropLeft', Math.min(frac * 100, 90 - (entry.cropRight ?? 0)));
+              } else {
+                onCrop(drag.key, 'cropRight', Math.min((1 - frac) * 100, 90 - (entry.cropLeft ?? 0)));
+              }
+            }
+            function onUp() {
+              cropDragRef.current = 'done';
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+            }
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+            return;
+          }
+        }
       }
 
       return (
@@ -58,7 +113,7 @@
             Page {pageIndex + 1}
             {detecting && <span className="ml-2 text-amber-500 animate-pulse">detecting…</span>}
           </p>
-          <div ref={containerRef} className="relative w-full">
+          <div ref={containerRef} className="relative w-full" onMouseDown={handleContainerMouseDown}>
             <img
               src={`${SCROLL_API_URL}/api/pages/${jobId}/${pageIndex}`}
               alt={`Page ${pageIndex + 1}`}
@@ -145,7 +200,7 @@
                     </g>
                   );
                 })}
-                {/* Crop handles on selected staves */}
+                {/* Crop handles on selected staves — hit-testing done in handleContainerMouseDown */}
                 {selectionEntries
                   .filter(e => e.stave.pageIndex === pageIndex)
                   .map(entry => {
@@ -155,90 +210,44 @@
                     const leftPx  = renderW * ((entry.cropLeft  ?? 0) / 100);
                     const rightPx = renderW * ((entry.cropRight ?? 0) / 100);
                     const HANDLE_W = 14;
-
-                    function startCropDrag(side, e) {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      const svgEl = e.currentTarget.closest('svg');
-                      const rect  = svgEl.getBoundingClientRect();
-                      let moved = false;
-                      function onMove(mv) {
-                        moved = true;
-                        const frac = Math.max(0, Math.min(1, (mv.clientX - rect.left) / rect.width));
-                        if (side === 'cropLeft') {
-                          onCrop(entry.key, 'cropLeft', Math.min(frac * 100, 90 - (entry.cropRight ?? 0)));
-                        } else {
-                          onCrop(entry.key, 'cropRight', Math.min((1 - frac) * 100, 90 - (entry.cropLeft ?? 0)));
-                        }
-                      }
-                      function onUp() {
-                        window.removeEventListener('mousemove', onMove);
-                        window.removeEventListener('mouseup', onUp);
-                        // Suppress the click that fires after mouseup so it doesn't
-                        // trigger the stave toggle or SVG page-click handlers.
-                        if (moved) {
-                          function blockClick(ev) {
-                            ev.stopPropagation();
-                            ev.preventDefault();
-                            window.removeEventListener('click', blockClick, true);
-                          }
-                          window.addEventListener('click', blockClick, true);
-                        }
-                      }
-                      window.addEventListener('mousemove', onMove);
-                      window.addEventListener('mouseup', onUp);
-                    }
-
                     return (
-                      <g key={`crop-${entry.key}`} style={{ pointerEvents: 'all' }}>
+                      <g key={`crop-${entry.key}`} style={{ pointerEvents: 'none' }}>
                         {/* left cropped zone overlay */}
                         {leftPx > 0 && (
                           <rect x={0} y={top} width={leftPx} height={bottom - top}
-                            fill="rgba(0,0,0,0.35)" style={{ pointerEvents: 'none' }} />
+                            fill="rgba(0,0,0,0.35)" />
                         )}
                         {/* right cropped zone overlay */}
                         {rightPx > 0 && (
                           <rect x={renderW - rightPx} y={top} width={rightPx} height={bottom - top}
-                            fill="rgba(0,0,0,0.35)" style={{ pointerEvents: 'none' }} />
+                            fill="rgba(0,0,0,0.35)" />
                         )}
-                        {/* left handle */}
-                        <g onMouseDown={e => startCropDrag('cropLeft', e)}
-                           onClick={e => { e.stopPropagation(); e.preventDefault(); }}
-                           style={{ cursor: 'ew-resize' }}>
-                          <rect x={leftPx} y={top} width={HANDLE_W} height={bottom - top}
-                            fill="rgba(251,191,36,0.9)" rx={3} />
-                          <text x={leftPx + HANDLE_W / 2} y={(top + bottom) / 2 + 4}
-                            textAnchor="middle" fill="#78350f" fontSize={10} fontWeight="bold"
-                            style={{ userSelect: 'none', pointerEvents: 'none' }}>⇤</text>
-                        </g>
+                        {/* left handle (visual only — interaction via containerRef) */}
+                        <rect x={leftPx} y={top} width={HANDLE_W} height={bottom - top}
+                          fill="rgba(251,191,36,0.9)" rx={3} style={{ cursor: 'ew-resize' }} />
+                        <text x={leftPx + HANDLE_W / 2} y={(top + bottom) / 2 + 4}
+                          textAnchor="middle" fill="#78350f" fontSize={10} fontWeight="bold"
+                          style={{ userSelect: 'none' }}>⇤</text>
                         {/* right handle */}
-                        <g onMouseDown={e => startCropDrag('cropRight', e)}
-                           onClick={e => { e.stopPropagation(); e.preventDefault(); }}
-                           style={{ cursor: 'ew-resize' }}>
-                          <rect x={renderW - rightPx - HANDLE_W} y={top} width={HANDLE_W} height={bottom - top}
-                            fill="rgba(251,191,36,0.9)" rx={3} />
-                          <text x={renderW - rightPx - HANDLE_W / 2} y={(top + bottom) / 2 + 4}
-                            textAnchor="middle" fill="#78350f" fontSize={10} fontWeight="bold"
-                            style={{ userSelect: 'none', pointerEvents: 'none' }}>⇥</text>
-                        </g>
+                        <rect x={renderW - rightPx - HANDLE_W} y={top} width={HANDLE_W} height={bottom - top}
+                          fill="rgba(251,191,36,0.9)" rx={3} style={{ cursor: 'ew-resize' }} />
+                        <text x={renderW - rightPx - HANDLE_W / 2} y={(top + bottom) / 2 + 4}
+                          textAnchor="middle" fill="#78350f" fontSize={10} fontWeight="bold"
+                          style={{ userSelect: 'none' }}>⇥</text>
                         {/* crop % labels */}
-                        {(leftPx > 0 || rightPx > 0) && (
-                          <>
-                            {leftPx > 0 && (
-                              <text x={leftPx + HANDLE_W + 3} y={top + 13}
-                                fill="#f59e0b" fontSize={10} fontWeight="bold"
-                                style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                                {Math.round(entry.cropLeft ?? 0)}%
-                              </text>
-                            )}
-                            {rightPx > 0 && (
-                              <text x={renderW - rightPx - HANDLE_W - 3} y={top + 13}
-                                textAnchor="end" fill="#f59e0b" fontSize={10} fontWeight="bold"
-                                style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                                {Math.round(entry.cropRight ?? 0)}%
-                              </text>
-                            )}
-                          </>
+                        {leftPx > 0 && (
+                          <text x={leftPx + HANDLE_W + 3} y={top + 13}
+                            fill="#f59e0b" fontSize={10} fontWeight="bold"
+                            style={{ userSelect: 'none' }}>
+                            {Math.round(entry.cropLeft ?? 0)}%
+                          </text>
+                        )}
+                        {rightPx > 0 && (
+                          <text x={renderW - rightPx - HANDLE_W - 3} y={top + 13}
+                            textAnchor="end" fill="#f59e0b" fontSize={10} fontWeight="bold"
+                            style={{ userSelect: 'none' }}>
+                            {Math.round(entry.cropRight ?? 0)}%
+                          </text>
                         )}
                       </g>
                     );
@@ -466,7 +475,7 @@
       }
 
       function nudgeSelection(key, dir) {
-        const NUDGE_PX = 2;
+        const NUDGE_PX = 1;
         setSelection(prev => prev.map(e => {
           if (e.key !== key) return e;
           const d = dir * NUDGE_PX;
