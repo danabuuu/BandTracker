@@ -31,7 +31,7 @@
     // ─── PageView ─────────────────────────────────────────────────────────────
 
     function PageView({ jobId, pageIndex, staveIndices, staves, selectionPos, selectionEntries, manualEntries,
-                        detecting, onToggle, onRemoveManual, onHideStave, onPageClick, padAbove, padBelow, onNudge, onCrop }) {
+                        detecting, onToggle, onRemoveManual, onHideStave, onPageClick, padAbove, padBelow, onNudge, onCrop, onPad }) {
       const containerRef = useRef(null);
       const [dims, setDims] = useState(null);
       const [renderW, setRenderW] = useState(0);
@@ -64,43 +64,90 @@
         const xPx = e.clientX - rect.left;
         const yPx = e.clientY - rect.top;
 
-        // Check if the click lands on a crop handle for any selected stave on this page
+        // Check if the click lands on a crop handle or a pad line for any selected stave on this page
         const HANDLE_W = 14;
+        const PAD_HIT = 8; // px tolerance around pad lines
         for (const entry of selectionEntries) {
           if (entry.stave.pageIndex !== pageIndex) continue;
           const s = entry.stave;
           const top    = s.top    * scale;
           const bottom = s.bottom * scale;
-          if (yPx < top || yPx > bottom) continue;
 
-          const leftHandleX  = renderW * ((entry.cropLeft  ?? 0) / 100);
-          const rightHandleX = renderW - renderW * ((entry.cropRight ?? 0) / 100) - HANDLE_W;
+          // Horizontal crop handles
+          if (yPx >= top && yPx <= bottom) {
+            const leftHandleX  = renderW * ((entry.cropLeft  ?? 0) / 100);
+            const rightHandleX = renderW - renderW * ((entry.cropRight ?? 0) / 100) - HANDLE_W;
 
-          let hitSide = null;
-          if (xPx >= leftHandleX && xPx <= leftHandleX + HANDLE_W) hitSide = 'cropLeft';
-          else if (xPx >= rightHandleX && xPx <= rightHandleX + HANDLE_W) hitSide = 'cropRight';
+            let hitSide = null;
+            if (xPx >= leftHandleX && xPx <= leftHandleX + HANDLE_W) hitSide = 'cropLeft';
+            else if (xPx >= rightHandleX && xPx <= rightHandleX + HANDLE_W) hitSide = 'cropRight';
 
-          if (hitSide) {
+            if (hitSide) {
+              e.stopPropagation();
+              e.preventDefault();
+              cropDragRef.current = { key: entry.key, side: hitSide };
+
+              function onMove(mv) {
+                const frac = Math.max(0, Math.min(1, (mv.clientX - rect.left) / renderW));
+                const drag = cropDragRef.current;
+                if (!drag || drag === 'done') return;
+                if (drag.side === 'cropLeft') {
+                  onCrop(drag.key, 'cropLeft', Math.min(frac * 100, 90 - (entry.cropRight ?? 0)));
+                } else {
+                  onCrop(drag.key, 'cropRight', Math.min((1 - frac) * 100, 90 - (entry.cropLeft ?? 0)));
+                }
+              }
+              function onUp() {
+                cropDragRef.current = 'done';
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                function blockClick(ev) {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                  window.removeEventListener('click', blockClick, true);
+                  cropDragRef.current = null;
+                }
+                window.addEventListener('click', blockClick, true);
+              }
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+              return;
+            }
+          }
+
+          // Vertical pad lines
+          const staffH = s.lineBottom - s.lineTop;
+          const effAbove = entry.padAbove ?? padAbove;
+          const effBelow = entry.padBelow ?? padBelow;
+          const padTopY    = Math.max(0, s.lineTop  - staffH * effAbove) * scale;
+          const padBottomY = Math.min(s.lineBottom + staffH * effBelow, dims.h - 1) * scale;
+
+          let padSide = null;
+          if (Math.abs(yPx - padTopY) <= PAD_HIT) padSide = 'padAbove';
+          else if (Math.abs(yPx - padBottomY) <= PAD_HIT) padSide = 'padBelow';
+
+          if (padSide) {
             e.stopPropagation();
             e.preventDefault();
-            cropDragRef.current = { key: entry.key, side: hitSide };
+            cropDragRef.current = { key: entry.key, side: padSide };
 
-            function onMove(mv) {
-              const frac = Math.max(0, Math.min(1, (mv.clientX - rect.left) / renderW));
+            function onPadMove(mv) {
               const drag = cropDragRef.current;
               if (!drag || drag === 'done') return;
-              if (drag.side === 'cropLeft') {
-                onCrop(drag.key, 'cropLeft', Math.min(frac * 100, 90 - (entry.cropRight ?? 0)));
+              const naturalY = (mv.clientY - rect.top) / scale;
+              const staffHNat = s.lineBottom - s.lineTop;
+              if (drag.side === 'padAbove') {
+                const newPad = (s.lineTop - naturalY) / staffHNat;
+                onPad(drag.key, 'padAbove', Math.max(-0.5, newPad));
               } else {
-                onCrop(drag.key, 'cropRight', Math.min((1 - frac) * 100, 90 - (entry.cropLeft ?? 0)));
+                const newPad = (naturalY - s.lineBottom) / staffHNat;
+                onPad(drag.key, 'padBelow', Math.max(-0.5, newPad));
               }
             }
-            function onUp() {
+            function onPadUp() {
               cropDragRef.current = 'done';
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
-              // Capture-phase click blocker fires before any React/SVG handler
-              // so the stave's onClick cannot deselect it after a crop drag.
+              window.removeEventListener('mousemove', onPadMove);
+              window.removeEventListener('mouseup', onPadUp);
               function blockClick(ev) {
                 ev.stopPropagation();
                 ev.preventDefault();
@@ -109,8 +156,8 @@
               }
               window.addEventListener('click', blockClick, true);
             }
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
+            window.addEventListener('mousemove', onPadMove);
+            window.addEventListener('mouseup', onPadUp);
             return;
           }
         }
@@ -188,24 +235,40 @@
                     </g>
                   );
                 })}
-                {/* Padding preview lines for selected staves */}
+                {/* Padding preview lines — draggable per stave; hit-testing in handleContainerMouseDown */}
                 {[...staveIndices
                     .filter(idx => selectionPos.has(`auto-${idx}`))
-                    .map(idx => {
-                      const entry = selectionEntries.find(e => e.key === `auto-${idx}`);
-                      return entry ? entry.stave : staves[idx];
-                    }),
-                  ...manualEntries.map(e => e.stave)
-                ].map((stave, i) => {
+                    .map(idx => selectionEntries.find(e => e.key === `auto-${idx}`))
+                    .filter(Boolean),
+                  ...manualEntries
+                ].map((entry) => {
+                  const stave = entry.stave;
                   const staffH = stave.lineBottom - stave.lineTop;
-                  const cropTop    = Math.max(0, stave.lineTop    - staffH * padAbove) * scale;
-                  const cropBottom = Math.min(stave.lineBottom + staffH * padBelow, dims.h - 1) * scale;
+                  const effAbove = entry.padAbove ?? padAbove;
+                  const effBelow = entry.padBelow ?? padBelow;
+                  const cropTop    = Math.max(0, stave.lineTop    - staffH * effAbove) * scale;
+                  const cropBottom = Math.min(stave.lineBottom + staffH * effBelow, dims.h - 1) * scale;
+                  const overridden = entry.padAbove !== undefined || entry.padBelow !== undefined;
+                  const lineColor  = overridden ? '#a78bfa' : '#f59e0b';
                   return (
-                    <g key={`pad-${i}`} style={{ pointerEvents: 'none' }}>
-                      <line x1={0} x2={renderW} y1={cropTop}    y2={cropTop}
-                        stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3" />
+                    <g key={`pad-${entry.key}`} style={{ pointerEvents: 'none' }}>
+                      {/* top pad line */}
+                      <line x1={0} x2={renderW} y1={cropTop} y2={cropTop}
+                        stroke={lineColor} strokeWidth={2} strokeDasharray="5 3" />
+                      {/* drag hint zone (visual only) */}
+                      <rect x={0} y={cropTop - 4} width={renderW} height={8}
+                        fill="transparent" style={{ cursor: 'ns-resize' }} />
+                      {/* bottom pad line */}
                       <line x1={0} x2={renderW} y1={cropBottom} y2={cropBottom}
-                        stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3" />
+                        stroke={lineColor} strokeWidth={2} strokeDasharray="5 3" />
+                      <rect x={0} y={cropBottom - 4} width={renderW} height={8}
+                        fill="transparent" style={{ cursor: 'ns-resize' }} />
+                      {overridden && (
+                        <text x={4} y={cropTop - 3} fill={lineColor} fontSize={9} fontWeight="bold"
+                          style={{ userSelect: 'none' }}>
+                          {entry.padAbove !== undefined ? `↕${Math.round(entry.padAbove * 100)}%` : ''}
+                        </text>
+                      )}
                     </g>
                   );
                 })}
@@ -429,6 +492,18 @@
       const [songId, setSongId]                 = useState(session.songId || null);
       const [focusedKey, setFocusedKey]         = useState(null);
 
+      function setPadForKey(key, side, val) {
+        setSelection(prev => prev.map(e =>
+          e.key !== key ? e : { ...e, [side]: val }
+        ));
+      }
+
+      function resetPadForKey(key) {
+        setSelection(prev => prev.map(e =>
+          e.key !== key ? e : { ...e, padAbove: undefined, padBelow: undefined }
+        ));
+      }
+
       // Arrow key nudge for the focused stave
       useEffect(() => {
         function onKey(e) {
@@ -571,6 +646,8 @@
                 ...e.stave,
                 ...(e.cropLeft  > 0 ? { cropLeft:  e.cropLeft  / 100 } : {}),
                 ...(e.cropRight > 0 ? { cropRight: e.cropRight / 100 } : {}),
+                ...(e.padAbove !== undefined ? { padAbove: e.padAbove } : {}),
+                ...(e.padBelow !== undefined ? { padBelow: e.padBelow } : {}),
               })),
               songId: sid,
               ...(tempoNum && tempoNum > 0 ? { tempo: tempoNum } : {}),
@@ -684,6 +761,7 @@
                   padBelow={padBelow}
                   onNudge={nudgeSelection}
                   onCrop={setCropForKey}
+                  onPad={setPadForKey}
                 />
               ))}
             </div>
@@ -777,6 +855,13 @@
                       <span className="ml-1 text-amber-500">
                         {(entry.cropLeft ?? 0) > 0 ? `◀${Math.round(entry.cropLeft)}%` : ''}
                         {(entry.cropRight ?? 0) > 0 ? ` ${Math.round(entry.cropRight)}%▶` : ''}
+                      </span>
+                    )}
+                    {(entry.padAbove !== undefined || entry.padBelow !== undefined) && (
+                      <span className="ml-1 text-violet-400" title="Per-strip vertical crop override. Click to reset.">
+                        ↕
+                        <button onClick={ev => { ev.stopPropagation(); resetPadForKey(entry.key); }}
+                          className="ml-0.5 text-violet-300 hover:text-red-400" title="Reset to global pad">↺</button>
                       </span>
                     )}
                   </span>
