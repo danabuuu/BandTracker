@@ -1738,13 +1738,13 @@
                                               rel="noopener noreferrer"
                                               className="inline-flex items-center gap-1 bg-indigo-500/30 border border-indigo-400/50 text-indigo-200 text-xs font-semibold px-2 py-1 rounded-full hover:bg-indigo-500/50 transition-colors cursor-pointer"
                                               title="Open strip image">
-                                              <Icon name="image" />
+                                              <Icon name="film" />
                                               {part.label || `Part ${i+1}`}
                                             </a>
                                           ) : (
                                             <span key={i}
-                                              className="inline-flex items-center gap-1 bg-indigo-500/30 border border-indigo-400/50 text-indigo-200 text-xs font-semibold px-2 py-1 rounded-full">
-                                              <Icon name="image" />
+                                              className="inline-flex items-center gap-1 bg-white/10 border border-white/20 text-white/50 text-xs font-semibold px-2 py-1 rounded-full">
+                                              <Icon name="film" />
                                               {part.label || `Part ${i+1}`}
                                             </span>
                                           )
@@ -1755,7 +1755,7 @@
                                             className="inline-flex items-center gap-1 bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-semibold px-2 py-1 rounded-full hover:bg-amber-500/40 transition-colors"
                                           >
                                             <Icon name="plus" />
-                                            Create Strip
+                                            Add Strip
                                           </a>
                                         )}
                                       </div>
@@ -2153,40 +2153,29 @@ No songs found matching "{searchQuery[gig.id]}"
                                           {(() => {
                                             const parts = Array.isArray(song.parts) ? song.parts : [];
                                             return (
-                                              <div className="flex flex-col gap-1 mt-1">
-                                                <div className="flex flex-wrap items-center gap-1">
-                                                  {parts.length > 0 ? parts.map((p, i) =>
-                                                    p.imageUrl ? (
-                                                      <a key={i} href={p.imageUrl} target="_blank" rel="noopener noreferrer"
-                                                        className="bg-green-500/30 text-green-200 text-xs px-1.5 py-0.5 rounded-full font-semibold hover:bg-green-500/50 transition-colors"
-                                                        title="View strip">
-                                                        {p.label || `P${i+1}`}
-                                                      </a>
-                                                    ) : (
-                                                      <span key={i} className="bg-green-500/30 text-green-200 text-xs px-1.5 py-0.5 rounded-full font-semibold">
-                                                        {p.label || `P${i+1}`}
-                                                      </span>
-                                                    )
+                                              <div className="flex flex-wrap items-center gap-1 mt-1">
+                                                {parts.length > 0 ? parts.map((p, i) =>
+                                                  p.imageUrl ? (
+                                                    <a key={i} href={p.imageUrl} target="_blank" rel="noopener noreferrer"
+                                                      className="inline-flex items-center gap-1 bg-green-500/30 text-green-200 text-xs px-1.5 py-0.5 rounded-full font-semibold hover:bg-green-500/50 transition-colors"
+                                                      title="View strip">
+                                                      <Icon name="film" />
+                                                      {p.label || `P${i+1}`}
+                                                    </a>
                                                   ) : (
-                                                    <span className="text-white/30 text-xs">no strips</span>
-                                                  )}
-                                                  <a
-                                                    href={`upload.html?songId=${songId}&returnTo=setlist&gigId=${gig.id}`}
-                                                    className="text-indigo-300 hover:text-indigo-100 text-xs px-1 py-0.5 rounded hover:bg-white/10"
-                                                    title="Upload PDF to create a new strip"
-                                                  >+ Strip</a>
-                                                </div>
-                                                {parts.some(p => p.imageUrl) && (
-                                                  <div className="flex flex-wrap gap-2">
-                                                    {parts.filter(p => p.imageUrl).map((p, i) => (
-                                                      <a key={i} href={p.imageUrl} target="_blank" rel="noopener noreferrer" title={p.label || `Part ${i+1}`}>
-                                                        <img src={p.imageUrl} alt={p.label || `Part ${i+1}`}
-                                                          className="rounded border border-white/20"
-                                                          style={{ height: '36px', objectFit: 'contain', objectPosition: 'left' }} />
-                                                      </a>
-                                                    ))}
-                                                  </div>
+                                                    <span key={i} className="inline-flex items-center gap-1 bg-white/10 border border-white/20 text-white/40 text-xs px-1.5 py-0.5 rounded-full font-semibold">
+                                                      <Icon name="film" />
+                                                      {p.label || `P${i+1}`}
+                                                    </span>
+                                                  )
+                                                ) : (
+                                                  <span className="text-white/30 text-xs">no strips</span>
                                                 )}
+                                                <a
+                                                  href={`upload.html?songId=${songId}&returnTo=setlist&gigId=${gig.id}`}
+                                                  className="text-indigo-300 hover:text-indigo-100 text-xs px-1 py-0.5 rounded hover:bg-white/10"
+                                                  title="Upload PDF to create a new strip"
+                                                >+ Strip</a>
                                               </div>
                                             );
                                           })()}

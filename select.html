@@ -225,13 +225,13 @@
       const [scrollPreviewUrl, setScrollPreviewUrl] = useState(null);
       const [savedParts, setSavedParts]       = useState([]);
       const [hiddenAutoStaves, setHiddenAutoStaves] = useState(() => new Set());
-      const [partLabel, setPartLabel]           = useState('S');
+      const PART_LABEL_OPTIONS = ['S 1R','S 2R','A 1R','A 2R','T 1R','T 2R','B 1R','B 2R'];
+      const [partLabel, setPartLabel]           = useState('S 2R');
       const [tempo, setTempo]                   = useState(sessionBpm ? String(sessionBpm) : '');
       const [measures, setMeasures]             = useState(
         sessionBeatsInScroll ? String(Math.round(sessionBeatsInScroll / 4)) : ''
       );
       const [beatsPerMeasure, setBeatsPerMeasure] = useState('4');
-      const [rows, setRows]                     = useState(1);
       const [padAbove, setPadAbove]             = useState(DEFAULT_PAD_ABOVE);
       const [padBelow, setPadBelow]             = useState(DEFAULT_PAD_BELOW);
       const [songId, setSongId]                 = useState(session.songId || null);
@@ -344,6 +344,7 @@
           const bpmNum = beatsPerMeasure.trim() ? parseInt(beatsPerMeasure) : 4;
           const beatsInScroll = measureNum && bpmNum > 0 ? measureNum * bpmNum : undefined;
           const label = partLabel.trim() || null;
+          const rowCount = label && label.includes('2R') ? 2 : 1;
 
           const res = await fetch(`${SCROLL_API_URL}/api/build`, {
             method: 'POST',
@@ -354,7 +355,7 @@
               songId: sid,
               ...(tempoNum && tempoNum > 0 ? { tempo: tempoNum } : {}),
               ...(beatsInScroll && beatsInScroll > 0 ? { beatsInScroll } : {}),
-              rows,
+              rows: rowCount,
               padAbove,
               padBelow,
               ...(label ? { partLabel: label } : {}),
@@ -371,7 +372,7 @@
           setSavedParts(prev => [...prev, { label: label }]);
 
           const usedLabels = new Set([...savedParts.map(p => p.label), label]);
-          const nextLabel = ['S','A','T','B'].find(l => !usedLabels.has(l)) ?? 'S';
+          const nextLabel = PART_LABEL_OPTIONS.find(l => !usedLabels.has(l)) ?? 'S 2R';
 
           if (saveMode === 'add-another') {
             setSelection([]);
@@ -479,10 +480,9 @@
                 onChange={e => setPartLabel(e.target.value)}
                 className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-gray-700"
               >
-                <option value="S">S — Soprano</option>
-                <option value="A">A — Alto</option>
-                <option value="T">T — Tenor</option>
-                <option value="B">B — Bass</option>
+                {PART_LABEL_OPTIONS.map(o => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
               </select>
 
               <div className="flex items-center gap-2">
@@ -517,20 +517,6 @@
               {beatsTotal !== null && !isNaN(beatsTotal) && (
                 <p className="text-xs text-gray-400">= {beatsTotal} beats total</p>
               )}
-
-              <div className="flex items-center gap-2 pt-1">
-                <label className="text-xs text-gray-400 shrink-0">Layout</label>
-                <div className="flex rounded border border-gray-200 overflow-hidden text-xs">
-                  <button type="button" onClick={() => setRows(1)}
-                    className={`px-2 py-1 ${rows === 1 ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                    1 row
-                  </button>
-                  <button type="button" onClick={() => setRows(2)}
-                    className={`px-2 py-1 border-l border-gray-200 ${rows === 2 ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                    2 rows
-                  </button>
-                </div>
-              </div>
 
               <div className="flex items-center gap-2 pt-1">
                 <label className="text-xs text-gray-400 shrink-0">Pad ↑</label>
