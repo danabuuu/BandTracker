@@ -99,6 +99,15 @@
               cropDragRef.current = 'done';
               window.removeEventListener('mousemove', onMove);
               window.removeEventListener('mouseup', onUp);
+              // Capture-phase click blocker fires before any React/SVG handler
+              // so the stave's onClick cannot deselect it after a crop drag.
+              function blockClick(ev) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                window.removeEventListener('click', blockClick, true);
+                cropDragRef.current = null;
+              }
+              window.addEventListener('click', blockClick, true);
             }
             window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp);
