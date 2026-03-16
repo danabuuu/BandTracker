@@ -105,12 +105,12 @@
                             {pos}
                           </text>
                           <g onClick={e => { e.stopPropagation(); onNudge(key, -1); }} style={{ cursor: 'pointer' }}>
-                            <rect x={4} y={top + 2} width={26} height={20} rx={4} fill="rgba(99,102,241,0.85)" />
-                            <text x={17} y={top + 16} textAnchor="middle" fill="white" fontSize={14} fontWeight="bold" style={{ userSelect: 'none' }}>↑</text>
+                            <rect x={54} y={top + 2} width={26} height={20} rx={4} fill="rgba(99,102,241,0.85)" />
+                            <text x={67} y={top + 16} textAnchor="middle" fill="white" fontSize={14} fontWeight="bold" style={{ userSelect: 'none' }}>↑</text>
                           </g>
                           <g onClick={e => { e.stopPropagation(); onNudge(key, +1); }} style={{ cursor: 'pointer' }}>
-                            <rect x={4} y={bottom - 22} width={26} height={20} rx={4} fill="rgba(99,102,241,0.85)" />
-                            <text x={17} y={bottom - 8} textAnchor="middle" fill="white" fontSize={14} fontWeight="bold" style={{ userSelect: 'none' }}>↓</text>
+                            <rect x={54} y={bottom - 22} width={26} height={20} rx={4} fill="rgba(99,102,241,0.85)" />
+                            <text x={67} y={bottom - 8} textAnchor="middle" fill="white" fontSize={14} fontWeight="bold" style={{ userSelect: 'none' }}>↓</text>
                           </g>
                         </>
                       )}
@@ -161,7 +161,9 @@
                       e.preventDefault();
                       const svgEl = e.currentTarget.closest('svg');
                       const rect  = svgEl.getBoundingClientRect();
+                      let moved = false;
                       function onMove(mv) {
+                        moved = true;
                         const frac = Math.max(0, Math.min(1, (mv.clientX - rect.left) / rect.width));
                         if (side === 'cropLeft') {
                           onCrop(entry.key, 'cropLeft', Math.min(frac * 100, 90 - (entry.cropRight ?? 0)));
@@ -172,6 +174,16 @@
                       function onUp() {
                         window.removeEventListener('mousemove', onMove);
                         window.removeEventListener('mouseup', onUp);
+                        // Suppress the click that fires after mouseup so it doesn't
+                        // trigger the stave toggle or SVG page-click handlers.
+                        if (moved) {
+                          function blockClick(ev) {
+                            ev.stopPropagation();
+                            ev.preventDefault();
+                            window.removeEventListener('click', blockClick, true);
+                          }
+                          window.addEventListener('click', blockClick, true);
+                        }
                       }
                       window.addEventListener('mousemove', onMove);
                       window.addEventListener('mouseup', onUp);
@@ -190,7 +202,9 @@
                             fill="rgba(0,0,0,0.35)" style={{ pointerEvents: 'none' }} />
                         )}
                         {/* left handle */}
-                        <g onMouseDown={e => startCropDrag('cropLeft', e)} style={{ cursor: 'ew-resize' }}>
+                        <g onMouseDown={e => startCropDrag('cropLeft', e)}
+                           onClick={e => { e.stopPropagation(); e.preventDefault(); }}
+                           style={{ cursor: 'ew-resize' }}>
                           <rect x={leftPx} y={top} width={HANDLE_W} height={bottom - top}
                             fill="rgba(251,191,36,0.9)" rx={3} />
                           <text x={leftPx + HANDLE_W / 2} y={(top + bottom) / 2 + 4}
@@ -198,7 +212,9 @@
                             style={{ userSelect: 'none', pointerEvents: 'none' }}>⇤</text>
                         </g>
                         {/* right handle */}
-                        <g onMouseDown={e => startCropDrag('cropRight', e)} style={{ cursor: 'ew-resize' }}>
+                        <g onMouseDown={e => startCropDrag('cropRight', e)}
+                           onClick={e => { e.stopPropagation(); e.preventDefault(); }}
+                           style={{ cursor: 'ew-resize' }}>
                           <rect x={renderW - rightPx - HANDLE_W} y={top} width={HANDLE_W} height={bottom - top}
                             fill="rgba(251,191,36,0.9)" rx={3} />
                           <text x={renderW - rightPx - HANDLE_W / 2} y={(top + bottom) / 2 + 4}
@@ -250,12 +266,12 @@
                             {pos}
                           </text>
                           <g onClick={e => { e.stopPropagation(); onNudge(entry.key, -1); }} style={{ cursor: 'pointer' }}>
-                            <rect x={4} y={top + 2} width={26} height={20} rx={4} fill="rgba(34,197,94,0.85)" />
-                            <text x={17} y={top + 16} textAnchor="middle" fill="white" fontSize={14} fontWeight="bold" style={{ userSelect: 'none' }}>↑</text>
+                            <rect x={54} y={top + 2} width={26} height={20} rx={4} fill="rgba(34,197,94,0.85)" />
+                            <text x={67} y={top + 16} textAnchor="middle" fill="white" fontSize={14} fontWeight="bold" style={{ userSelect: 'none' }}>↑</text>
                           </g>
                           <g onClick={e => { e.stopPropagation(); onNudge(entry.key, +1); }} style={{ cursor: 'pointer' }}>
-                            <rect x={4} y={bottom - 22} width={26} height={20} rx={4} fill="rgba(34,197,94,0.85)" />
-                            <text x={17} y={bottom - 8} textAnchor="middle" fill="white" fontSize={14} fontWeight="bold" style={{ userSelect: 'none' }}>↓</text>
+                            <rect x={54} y={bottom - 22} width={26} height={20} rx={4} fill="rgba(34,197,94,0.85)" />
+                            <text x={67} y={bottom - 8} textAnchor="middle" fill="white" fontSize={14} fontWeight="bold" style={{ userSelect: 'none' }}>↓</text>
                           </g>
                         </>
                       )}
@@ -393,6 +409,20 @@
       const [padAbove, setPadAbove]             = useState(DEFAULT_PAD_ABOVE);
       const [padBelow, setPadBelow]             = useState(DEFAULT_PAD_BELOW);
       const [songId, setSongId]                 = useState(session.songId || null);
+      const [focusedKey, setFocusedKey]         = useState(null);
+
+      // Arrow key nudge for the focused stave
+      useEffect(() => {
+        function onKey(e) {
+          if (!focusedKey) return;
+          if (e.key === 'ArrowUp')   { e.preventDefault(); nudgeSelection(focusedKey, -1); }
+          if (e.key === 'ArrowDown') { e.preventDefault(); nudgeSelection(focusedKey, +1); }
+        }
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+        // nudgeSelection only uses setSelection (functional update) so it's stable
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [focusedKey]);
 
       const selectionPos = new Map(selection.map((e, i) => [e.key, i + 1]));
 
@@ -419,8 +449,10 @@
         const key = `auto-${idx}`;
         if (selectionPos.has(key)) {
           setSelection(prev => prev.filter(e => e.key !== key));
+          setFocusedKey(prev => prev === key ? null : prev);
         } else {
           addEntry({ stave: staves[idx], key, manual: false });
+          setFocusedKey(key);
         }
       }
 
@@ -485,6 +517,7 @@
 
           const key = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
           addEntry({ stave, key, manual: true });
+          setFocusedKey(key);
         } catch {
           setDetectError('Network error — could not reach the API');
         } finally {
