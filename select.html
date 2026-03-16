@@ -187,6 +187,68 @@
       );
     }
 
+    // ─── CropBar ──────────────────────────────────────────────────────────────
+
+    function CropBar({ entry, onCrop }) {
+      const barRef = React.useRef(null);
+      const leftPct  = entry.cropLeft  ?? 0;
+      const rightPct = entry.cropRight ?? 0;
+
+      function startDrag(side, e) {
+        e.preventDefault();
+        const bar = barRef.current;
+        if (!bar) return;
+        const rect = bar.getBoundingClientRect();
+        function onMove(mv) {
+          const frac = (mv.clientX - rect.left) / rect.width;
+          if (side === 'cropLeft') {
+            onCrop(entry.key, 'cropLeft', frac * 100);
+          } else {
+            onCrop(entry.key, 'cropRight', (1 - frac) * 100);
+          }
+        }
+        function onUp() {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+        }
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      }
+
+      const showLabel = leftPct > 0 || rightPct > 0;
+      return (
+        <div className="px-2 pb-1.5">
+          <div
+            ref={barRef}
+            className="relative h-3 rounded bg-gray-200 cursor-crosshair select-none"
+            title="Drag handles to crop this strip"
+          >
+            {/* active (kept) region */}
+            <div className="absolute inset-y-0 bg-indigo-300/60 rounded"
+              style={{ left: `${leftPct}%`, right: `${rightPct}%` }} />
+            {/* left handle */}
+            <div
+              className="absolute inset-y-0 w-2 bg-indigo-500 rounded-l cursor-ew-resize hover:bg-indigo-700 transition-colors"
+              style={{ left: `${leftPct}%` }}
+              onMouseDown={e => startDrag('cropLeft', e)}
+            />
+            {/* right handle */}
+            <div
+              className="absolute inset-y-0 w-2 bg-indigo-500 rounded-r cursor-ew-resize hover:bg-indigo-700 transition-colors"
+              style={{ right: `${rightPct}%` }}
+              onMouseDown={e => startDrag('cropRight', e)}
+            />
+          </div>
+          {showLabel && (
+            <div className="flex justify-between text-gray-400 mt-0.5" style={{fontSize:'0.6rem'}}>
+              <span>{leftPct > 0 ? `◀ ${Math.round(leftPct)}%` : ''}</span>
+              <span>{rightPct > 0 ? `${Math.round(rightPct)}% ▶` : ''}</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // ─── SelectPage ───────────────────────────────────────────────────────────
 
     function SelectPage() {
@@ -246,8 +308,15 @@
             entry.stave.lineTop < e.stave.lineBottom
           );
           if (overlaps) return prev;
-          return [...prev, entry].sort(byPageThenTop);
+          const newEntry = { cropLeft: 0, cropRight: 0, ...entry };
+          return [...prev, newEntry].sort(byPageThenTop);
         });
+      }
+
+      function setCropForKey(key, side, pct) {
+        setSelection(prev => prev.map(e =>
+          e.key !== key ? e : { ...e, [side]: Math.max(0, Math.min(50, Math.round(pct))) }
+        ));
       }
 
       function toggleAutoStave(idx) {
@@ -351,7 +420,11 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               jobId,
-              staves: selection.map(e => e.stave),
+              staves: selection.map(e => ({
+                ...e.stave,
+                ...(e.cropLeft  > 0 ? { cropLeft:  e.cropLeft  / 100 } : {}),
+                ...(e.cropRight > 0 ? { cropRight: e.cropRight / 100 } : {}),
+              })),
               songId: sid,
               ...(tempoNum && tempoNum > 0 ? { tempo: tempoNum } : {}),
               ...(beatsInScroll && beatsInScroll > 0 ? { beatsInScroll } : {}),
@@ -544,17 +617,22 @@
               )}
               {selection.map((entry, pos) => (
                 <div key={entry.key}
-                  className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${
+                  className={`rounded border text-xs ${
                     entry.manual ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
                   }`}>
-                  <span className={`w-4 text-center font-mono font-bold shrink-0 ${entry.manual ? 'text-green-700' : 'text-indigo-600'}`}>
-                    {pos + 1}
-                  </span>
-                  <span className="flex-1 text-gray-600 truncate">
-                    p{entry.stave.pageIndex + 1}{entry.manual ? ' ✦' : ''}
-                  </span>
-                  <button onClick={e => { e.stopPropagation(); removeFromSelection(entry.key); }}
-                    className="text-gray-300 hover:text-red-500 font-bold leading-none">×</button>
+                  {/* Row: number / label / remove */}
+                  <div className="flex items-center gap-1 px-2 py-1">
+                    <span className={`w-4 text-center font-mono font-bold shrink-0 ${entry.manual ? 'text-green-700' : 'text-indigo-600'}`}>
+                      {pos + 1}
+                    </span>
+                    <span className="flex-1 text-gray-600 truncate">
+                      p{entry.stave.pageIndex + 1}{entry.manual ? ' ✦' : ''}
+                    </span>
+                    <button onClick={e => { e.stopPropagation(); removeFromSelection(entry.key); }}
+                      className="text-gray-300 hover:text-red-500 font-bold leading-none">×</button>
+                  </div>
+                  {/* Crop handles bar */}
+                  <CropBar entry={entry} onCrop={setCropForKey} />
                 </div>
               ))}
               {selection.length > 0 && (

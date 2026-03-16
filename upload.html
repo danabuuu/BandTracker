@@ -73,12 +73,26 @@
         setError('');
 
         try {
-          const form = new FormData();
-          form.append('pdf', file);
+          // Step 1: get a signed upload URL + jobId from the server.
+          // This lets us PUT the PDF directly to Supabase Storage, bypassing
+          // Vercel's 4.5 MB request-body limit for large sheet music PDFs.
+          const urlRes = await fetch(`${SCROLL_API_URL}/api/upload-url`, { method: 'POST' });
+          if (!urlRes.ok) throw new Error(`Failed to get upload URL (HTTP ${urlRes.status})`);
+          const { jobId, signedUrl } = await urlRes.json();
 
+          // Step 2: PUT the PDF bytes directly to Supabase Storage.
+          const putRes = await fetch(signedUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/pdf' },
+            body: file,
+          });
+          if (!putRes.ok) throw new Error(`Direct upload to storage failed (HTTP ${putRes.status})`);
+
+          // Step 3: ask the server to analyze the already-uploaded PDF.
           const res = await fetch(`${SCROLL_API_URL}/api/analyze`, {
             method: 'POST',
-            body: form,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId }),
           });
 
           if (!res.ok) {
