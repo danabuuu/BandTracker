@@ -100,7 +100,7 @@
             throw new Error(data.error ?? `HTTP ${res.status}`);
           }
 
-          const { jobId, analysis } = await res.json();
+          const { analysis } = await res.json();
 
           const urlParams = new URLSearchParams(window.location.search);
           sessionStorage.setItem(`scroll-job-${jobId}`, JSON.stringify({
