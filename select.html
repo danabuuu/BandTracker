@@ -86,8 +86,10 @@
               e.stopPropagation();
               e.preventDefault();
               cropDragRef.current = { key: entry.key, side: hitSide };
+              let cropMoved = false;
 
               function onMove(mv) {
+                cropMoved = true;
                 const frac = Math.max(0, Math.min(1, (mv.clientX - rect.left) / renderW));
                 const drag = cropDragRef.current;
                 if (!drag || drag === 'done') return;
@@ -101,13 +103,17 @@
                 cropDragRef.current = 'done';
                 window.removeEventListener('mousemove', onMove);
                 window.removeEventListener('mouseup', onUp);
-                function blockClick(ev) {
-                  ev.stopPropagation();
-                  ev.preventDefault();
-                  window.removeEventListener('click', blockClick, true);
+                if (cropMoved) {
+                  function blockClick(ev) {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                    window.removeEventListener('click', blockClick, true);
+                    cropDragRef.current = null;
+                  }
+                  window.addEventListener('click', blockClick, true);
+                } else {
                   cropDragRef.current = null;
                 }
-                window.addEventListener('click', blockClick, true);
               }
               window.addEventListener('mousemove', onMove);
               window.addEventListener('mouseup', onUp);
@@ -130,8 +136,10 @@
             e.stopPropagation();
             e.preventDefault();
             cropDragRef.current = { key: entry.key, side: padSide };
+            let padMoved = false;
 
             function onPadMove(mv) {
+              padMoved = true;
               const drag = cropDragRef.current;
               if (!drag || drag === 'done') return;
               const naturalY = (mv.clientY - rect.top) / scale;
@@ -148,13 +156,17 @@
               cropDragRef.current = 'done';
               window.removeEventListener('mousemove', onPadMove);
               window.removeEventListener('mouseup', onPadUp);
-              function blockClick(ev) {
-                ev.stopPropagation();
-                ev.preventDefault();
-                window.removeEventListener('click', blockClick, true);
+              if (padMoved) {
+                function blockClick(ev) {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                  window.removeEventListener('click', blockClick, true);
+                  cropDragRef.current = null;
+                }
+                window.addEventListener('click', blockClick, true);
+              } else {
                 cropDragRef.current = null;
               }
-              window.addEventListener('click', blockClick, true);
             }
             window.addEventListener('mousemove', onPadMove);
             window.addEventListener('mouseup', onPadUp);
@@ -480,8 +492,8 @@
       const [scrollPreviewUrl, setScrollPreviewUrl] = useState(null);
       const [savedParts, setSavedParts]       = useState([]);
       const [hiddenAutoStaves, setHiddenAutoStaves] = useState(() => new Set());
-      const PART_LABEL_OPTIONS = ['S 1R','S 2R','A 1R','A 2R','T 1R','T 2R','B 1R','B 2R'];
-      const [partLabel, setPartLabel]           = useState('T 2R');
+      const PART_LABEL_OPTIONS = ['S', 'A', 'T', 'B'];
+      const [partLabel, setPartLabel]           = useState('T');
       const [tempo, setTempo]                   = useState(sessionBpm ? String(sessionBpm) : '');
       const [measures, setMeasures]             = useState(
         sessionBeatsInScroll ? String(Math.round(sessionBeatsInScroll / 4)) : ''
@@ -635,7 +647,6 @@
           const bpmNum = beatsPerMeasure.trim() ? parseInt(beatsPerMeasure) : 4;
           const beatsInScroll = measureNum && bpmNum > 0 ? measureNum * bpmNum : undefined;
           const label = partLabel.trim() || null;
-          const rowCount = label && label.includes('2R') ? 2 : 1;
 
           const res = await fetch(`${SCROLL_API_URL}/api/build`, {
             method: 'POST',
@@ -652,7 +663,7 @@
               songId: sid,
               ...(tempoNum && tempoNum > 0 ? { tempo: tempoNum } : {}),
               ...(beatsInScroll && beatsInScroll > 0 ? { beatsInScroll } : {}),
-              rows: rowCount,
+              rows: 2,
               padAbove,
               padBelow,
               ...(label ? { partLabel: label } : {}),
@@ -669,7 +680,7 @@
           setSavedParts(prev => [...prev, { label: label }]);
 
           const usedLabels = new Set([...savedParts.map(p => p.label), label]);
-          const nextLabel = PART_LABEL_OPTIONS.find(l => !usedLabels.has(l)) ?? 'S 2R';
+          const nextLabel = PART_LABEL_OPTIONS.find(l => !usedLabels.has(l)) ?? 'S';
 
           if (saveMode === 'add-another') {
             setSelection([]);

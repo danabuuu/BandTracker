@@ -370,6 +370,68 @@
     <p>Click <strong>Export CSV</strong> to download all your gigs and their setlists as a CSV file.</p>
   </div>
 
+  <!-- Scroll Strips & Smart Glasses -->
+  <div class="card" id="glasses">
+    <h2><i class="fas fa-glasses"></i> Scroll Strips &amp; Even Reality G2 Glasses</h2>
+    <p>
+      <strong>Scroll strips</strong> are specially prepared images of your sheet music designed to be
+      displayed on <strong>Even Reality G2 smart glasses</strong> during a live performance.
+      Instead of flipping pages, the music scrolls smoothly across the lenses at the correct tempo —
+      so performers can keep their eyes on the conductor and their bandmates.
+    </p>
+
+    <h3><i class="fas fa-film"></i> What is a Strip?</h3>
+    <p>
+      A strip is a single long image that stitches together every system of music for <strong>one voice part</strong>
+      of one song. When the song plays on the glasses, the strip scrolls left automatically,
+      advancing one screen-width per measure group. You create one strip per voice part
+      (Soprano, Alto, Tenor, or Bass) for each song.
+    </p>
+
+    <h3><i class="fas fa-wand-magic-sparkles"></i> How to Create a Strip</h3>
+    <ol class="steps">
+      <li><span>Open a song in the <strong>Repertoire</strong> tab and click <strong>Add Strip</strong> next to the voice part you want to create.</span></li>
+      <li><span>Upload the PDF of the sheet music for that part — the app analyses the score automatically.</span></li>
+      <li><span>On the selection page, click each system of music that belongs in the strip. Use the nudge arrows or <kbd>↑</kbd>&nbsp;<kbd>↓</kbd> keys to fine-tune the position of each selected system.</span></li>
+      <li><span>Adjust the vertical padding (amber dashed lines) so the staff sits comfortably within the glasses display.</span></li>
+      <li><span>Use the crop handles to trim any unwanted margins from either side.</span></li>
+      <li><span>Set the <strong>BPM</strong> and <strong>number of bars</strong> in the sidebar so the scroll speed matches the song.</span></li>
+      <li><span>Click <strong>Build &amp; Add Part</strong> to save this voice part and immediately start the next one, or <strong>Build &amp; Finish</strong> to return to the library.</span></li>
+    </ol>
+
+    <div class="tip">
+      <strong>💡 Tip:</strong> Build the Soprano strip first, then Alto, Tenor, and Bass in order.
+      The part label dropdown auto-advances to the next unused part after each successful build.
+    </div>
+
+    <h3><i class="fas fa-mobile-screen"></i> Connecting the Glasses</h3>
+    <p>
+      The Even Reality G2 companion app on your phone connects to the Glasses Playback app running
+      on your local network. To connect:
+    </p>
+    <ol class="steps">
+      <li><span>Make sure the playback server (Vite dev server) is running on the same Wi-Fi network as the glasses.</span></li>
+      <li><span>Open the <strong>Even Reality</strong> app on your phone and navigate to the App Hub.</span></li>
+      <li><span>Scan the QR code below (or enter the server URL manually) to load the Glasses Playback app.</span></li>
+      <li><span>On the glasses, use the temple button to select your voice part, choose a setlist, and start performing.</span></li>
+    </ol>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:0.75rem;margin:1.25rem 0;">
+      <p style="text-align:center;color:rgba(255,255,255,0.65);font-size:0.88rem;">
+        Scan to open the Glasses Playback app — make sure your device is on the same Wi-Fi network.
+      </p>
+      <img
+        id="glassesQr"
+        src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&color=ffffff&bgcolor=3b0764&data=http%3A%2F%2F192.168.86.178%3A5173"
+        alt="QR code for Glasses Playback app"
+        style="border-radius:0.75rem;width:180px;height:180px;"
+      />
+      <p style="text-align:center;color:rgba(255,255,255,0.5);font-size:0.8rem;">
+        Default URL: <code>http://192.168.86.178:5173</code> — update to match your server's IP address.
+      </p>
+    </div>
+  </div>
+
   <!-- Tips -->
   <div class="card">
     <h2><i class="fas fa-lightbulb"></i> Tips &amp; Tricks</h2>
